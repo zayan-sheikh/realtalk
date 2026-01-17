@@ -1,25 +1,17 @@
-import logo from './logo.svg';
-import './App.css';
+import { BrowserRouter, Routes, Route, useParams } from "react-router-dom";
+import VideoRoom from "./webrtc/VideoRoom";
 
-function App() {
-  return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
-  );
+function CallPage() {
+  const { roomId } = useParams();
+  return <VideoRoom roomId={roomId} />;
 }
 
-export default App;
+export default function App() {
+  return (
+    <BrowserRouter>
+      <Routes>
+        <Route path="/call/:roomId" element={<CallPage />} />
+      </Routes>
+    </BrowserRouter>
+  );
+}

@@ -1,12 +1,11 @@
-import { WebSocketServer } from "ws";
+const { WebSocketServer } = require("ws");
 
 const wss = new WebSocketServer({ port: 8080 });
-const rooms = new Map(); // roomId -> Set<ws>
+const rooms = new Map();
 
 wss.on("connection", (ws) => {
   ws.on("message", (message) => {
     const data = JSON.parse(message);
-
     const { type, roomId } = data;
 
     if (type === "join") {
@@ -16,7 +15,6 @@ wss.on("connection", (ws) => {
       return;
     }
 
-    // Relay signaling messages to the other peer
     if (["offer", "answer", "ice"].includes(type)) {
       rooms.get(roomId)?.forEach((client) => {
         if (client !== ws && client.readyState === 1) {
