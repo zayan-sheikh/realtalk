@@ -293,14 +293,15 @@ export default function VideoRoom({ roomId }) {
           setStatus("Call ended by peer");
           setCallActive(false);
           try {
-            pcRef.current?.getSenders().forEach((sender) => {
-              try { sender.track?.stop(); } catch {}  
-            });
-            pcRef.current?.close();
+            if (pcRef.current) {
+              pcRef.current.getSenders().forEach((sender) => {
+                try { sender.track?.stop(); } catch {}  
+              });
+              pcRef.current.close();
+              // Don't set to null, we'll check if it's closed and recreate it
+            }
           } catch {}
-          try {
-            localStreamRef.current?.getTracks().forEach((t) => t.stop());
-          } catch {}
+          // Don't stop local stream tracks, keep them for the next call
           remoteVideoRef.current.srcObject = null;
           return;
         }
@@ -363,8 +364,36 @@ export default function VideoRoom({ roomId }) {
 
   const startCall = async () => {
     const ws = wsRef.current;
-    const pc = pcRef.current;
-    if (!ws || !pc) return;
+    let pc = pcRef.current;
+    if (!ws || !localStreamRef.current) return;
+
+    // If PC is closed or doesn't exist, create a new one
+    if (!pc || pc.signalingState === "closed" || pc.connectionState === "closed") {
+      pc = new RTCPeerConnection(PC_CONFIG);
+      pcRef.current = pc;
+
+      // Re-add tracks
+      localStreamRef.current.getTracks().forEach((t) => {
+        if (t.readyState === "live") {
+          pc.addTrack(t, localStreamRef.current);
+        }
+      });
+
+      // Re-setup event handlers
+      pc.ontrack = (e) => {
+        remoteVideoRef.current.srcObject = e.streams[0];
+      };
+
+      pc.onicecandidate = (e) => {
+        if (e.candidate) {
+          ws.send(JSON.stringify({ type: "ice", roomId, candidate: e.candidate }));
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        setStatus(`WebRTC: ${pc.connectionState}`);
+      };
+    }
 
     if (!firstCallStarted) {
       setFirstCallStarted(true);
@@ -372,28 +401,35 @@ export default function VideoRoom({ roomId }) {
     }
 
     setStatus("Creating offer...");
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    ws.send(JSON.stringify({ type: "offer", roomId, sdp: pc.localDescription }));
-    setCallActive(true);
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      ws.send(JSON.stringify({ type: "offer", roomId, sdp: pc.localDescription }));
+      setCallActive(true);
+    } catch (error) {
+      console.error("Failed to create offer:", error);
+      setStatus("Failed to start call. Please try again.");
+    }
   };
 
   const endCall = () => {
     setStatus("Call ended");
     setCallActive(false);
     try {
-      pcRef.current?.getSenders().forEach((sender) => {
-        try { sender.track?.stop(); } catch {}
-      });
-      pcRef.current?.close();
+      if (pcRef.current) {
+        pcRef.current.getSenders().forEach((sender) => {
+          try { sender.track?.stop(); } catch {}
+        });
+        pcRef.current.close();
+        // Don't set to null, we'll check if it's closed and recreate it
+      }
     } catch {}
-    try {
-      localStreamRef.current?.getTracks().forEach((t) => t.stop());
-    } catch {}
+    // Don't stop local stream tracks, keep them for the next call
     // notify peer to end call
     try {
       wsRef.current?.send(JSON.stringify({ type: "end", roomId }));
     } catch {}
+    remoteVideoRef.current.srcObject = null;
   };
 
   const canStart = (!firstCallStarted && isInitiator && !callActive) || (firstCallStarted && !callActive);
