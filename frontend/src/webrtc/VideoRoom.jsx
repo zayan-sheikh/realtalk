@@ -280,6 +280,12 @@ export default function VideoRoom({ roomId }) {
           return;
         }
 
+        if (msg.type === "promote_to_initiator") {
+          setIsInitiator(true);
+          setStatus("Became initiator. You can start the call.");
+          return;
+        }
+
         const pc = pcRef.current;
         if (!pc) return;
 
