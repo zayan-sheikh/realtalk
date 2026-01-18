@@ -71,6 +71,22 @@ export default function VideoRoom({ roomId }) {
         const pc = pcRef.current;
         if (!pc) return;
 
+        if (msg.type === "end") {
+          setStatus("Call ended by peer");
+          setCallActive(false);
+          try {
+            pcRef.current?.getSenders().forEach((sender) => {
+              try { sender.track?.stop(); } catch {}  
+            });
+            pcRef.current?.close();
+          } catch {}
+          try {
+            localStreamRef.current?.getTracks().forEach((t) => t.stop());
+          } catch {}
+          remoteVideoRef.current.srcObject = null;
+          return;
+        }
+
         if (msg.type === "offer") {
           setStatus("Received offer. Creating answer...");
           await pc.setRemoteDescription(msg.sdp);
@@ -140,7 +156,10 @@ export default function VideoRoom({ roomId }) {
     try {
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
     } catch {}
-    // Optionally, notify peer (not implemented here)
+    // notify peer to end call
+    try {
+      wsRef.current?.send(JSON.stringify({ type: "end", roomId }));
+    } catch {}
   };
 
   const canStart = isInitiator && !callActive;
