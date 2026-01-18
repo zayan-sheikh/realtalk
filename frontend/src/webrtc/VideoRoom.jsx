@@ -1,10 +1,14 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useContext } from "react";
+import { useNavigate } from "react-router-dom";
+import { ThemeContext } from "../App";
+import "./VideoRoom.css";
 
 const PC_CONFIG = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
 
 export default function VideoRoom({ roomId }) {
+  const navigate = useNavigate();
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
 
@@ -22,6 +26,8 @@ export default function VideoRoom({ roomId }) {
   const [isInitiator, setIsInitiator] = useState(false);
   const [callActive, setCallActive] = useState(false);
   const [firstCallStarted, setFirstCallStarted] = useState(false);
+  const [isMuted, setIsMuted] = useState(false);
+  const [callEnded, setCallEnded] = useState(false);
 
   const SIGNAL_URL = "ws://35.183.199.110:8080";
 
@@ -286,6 +292,7 @@ export default function VideoRoom({ roomId }) {
         if (msg.type === "end") {
           setStatus("Call ended by peer");
           setCallActive(false);
+          setCallEnded(true);
           try {
             pcRef.current?.getSenders().forEach((sender) => {
               try { sender.track?.stop(); } catch {}  
@@ -296,6 +303,11 @@ export default function VideoRoom({ roomId }) {
             localStreamRef.current?.getTracks().forEach((t) => t.stop());
           } catch {}
           remoteVideoRef.current.srcObject = null;
+          
+          // Auto-redirect after 2 seconds
+          setTimeout(() => {
+            navigate("/");
+          }, 2000);
           return;
         }
 
@@ -375,6 +387,7 @@ export default function VideoRoom({ roomId }) {
   const endCall = () => {
     setStatus("Call ended");
     setCallActive(false);
+    setCallEnded(true);
     try {
       pcRef.current?.getSenders().forEach((sender) => {
         try { sender.track?.stop(); } catch {}
@@ -388,9 +401,50 @@ export default function VideoRoom({ roomId }) {
     try {
       wsRef.current?.send(JSON.stringify({ type: "end", roomId }));
     } catch {}
+    
+    // Auto-redirect after 2 seconds
+    setTimeout(() => {
+      navigate("/");
+    }, 2000);
+  };
+
+  const toggleMute = () => {
+    if (localStreamRef.current) {
+      const audioTrack = localStreamRef.current.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsMuted(!audioTrack.enabled);
+      }
+    }
+  };
+
+  const handleBack = () => {
+    if (callEnded) {
+      navigate("/");
+      return;
+    }
+    
+    if (window.confirm("Are you sure you want to leave the meeting?")) {
+      // Clean up
+      try {
+        pcRef.current?.getSenders().forEach((sender) => {
+          try { sender.track?.stop(); } catch {}
+        });
+        pcRef.current?.close();
+      } catch {}
+      try {
+        localStreamRef.current?.getTracks().forEach((t) => t.stop());
+      } catch {}
+      try {
+        wsRef.current?.send(JSON.stringify({ type: "end", roomId }));
+      } catch {}
+      
+      navigate("/");
+    }
   };
 
   const canStart = (!firstCallStarted && isInitiator && !callActive) || (firstCallStarted && !callActive);
+  const { theme, toggleTheme } = useContext(ThemeContext);
 
   const wrapStyle = {
     maxWidth: 980,
@@ -549,46 +603,56 @@ export default function VideoRoom({ roomId }) {
   };
 
   return (
-    <div style={wrapStyle}>
+    <div className="video-room-wrap">
       {/* Header */}
-      <div style={headerStyle}>
-        <div style={titleStyle}>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>Video Room</div>
-          <div style={roomPill}>
-            <span style={{ opacity: 0.7 }}>Room</span>
-            <span style={{ fontWeight: 600 }}>{roomId}</span>
+      <div className="video-room-header">
+        <button className="back-button" onClick={handleBack} title="Leave meeting">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+        </button>
+        
+        <div className="video-room-logo-section">
+          <div className="video-room-logo">
+            <img src="/logo.svg" alt="Logo" onError={(e) => { e.target.style.display = 'none'; e.target.parentNode.textContent = 'RT'; }} />
+          </div>
+          <div className="video-room-title">
+            <h1><strong>REAL</strong>TALK</h1>
+            <div className="video-room-pill">
+              <span style={{ opacity: 0.7 }}>Room</span>
+              <span style={{ fontWeight: 600 }}>{roomId}</span>
+            </div>
           </div>
         </div>
 
-        <div style={statusPill} title={status}>
-          <span style={dot} />
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {status}
-          </span>
+        <div className="video-room-header-right">
+          <div className="video-room-status-pill" title={status}>
+            <span className={`video-room-dot ${canStart ? 'can-start' : 'cannot-start'}`} />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {status}
+            </span>
+          </div>
+          
+          <button className="theme-toggle" onClick={toggleTheme} title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
+            {theme === 'light' ? '🌙' : '☀️'}
+          </button>
         </div>
       </div>
 
       {/* Videos */}
-      <div style={gridStyle}>
-        <div style={cardStyle}>
-          <div style={cardHeaderStyle}>
-            <div style={labelStyle}>
-              <span style={{ width: 8, height: 8, borderRadius: 999, background: "#3b82f6" }} />
-              Local
+      <div className="video-room-grid">
+        <div className="video-room-card">
+          <div className="video-room-card-header">
+            <div className="video-room-label">
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-primary)' }} />
+              You
             </div>
-            <span style={badgeStyle}>Muted</span>
+            {isMuted && <span className="video-room-badge">Muted</span>}
           </div>
-          <video ref={localVideoRef} autoPlay muted playsInline style={videoStyle} />
+          <video ref={localVideoRef} autoPlay muted playsInline className="video-room-video" />
           {lines.length > 0 && lines[lines.length - 1].en && (
-            <div style={{
-              padding: "12px",
-              background: "rgba(15, 23, 42, 0.05)",
-              borderTop: "1px solid rgba(15, 23, 42, 0.10)",
-              fontSize: 14,
-              color: "rgba(15, 23, 42, 0.85)",
-              lineHeight: 1.5,
-            }}>
-              <div style={{ fontSize: 11, color: "rgba(15, 23, 42, 0.6)", marginBottom: 4, fontWeight: 600 }}>
+            <div className="video-room-translation">
+              <div className="video-room-translation-label">
                 TRANSLATION
               </div>
               <div>{lines[lines.length - 1].en}</div>
@@ -596,25 +660,17 @@ export default function VideoRoom({ roomId }) {
           )}
         </div>
 
-        <div style={cardStyle}>
-          <div style={cardHeaderStyle}>
-            <div style={labelStyle}>
-              <span style={{ width: 8, height: 8, borderRadius: 999, background: "#a855f7" }} />
+        <div className="video-room-card">
+          <div className="video-room-card-header">
+            <div className="video-room-label">
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-secondary)' }} />
               Remote
             </div>
-            <span style={badgeStyle}>Live</span>
           </div>
-          <video ref={remoteVideoRef} autoPlay playsInline style={videoStyle} />
+          <video ref={remoteVideoRef} autoPlay playsInline className="video-room-video" />
           {remoteTranslation && (
-            <div style={{
-              padding: "12px",
-              background: "rgba(15, 23, 42, 0.05)",
-              borderTop: "1px solid rgba(15, 23, 42, 0.10)",
-              fontSize: 14,
-              color: "rgba(15, 23, 42, 0.85)",
-              lineHeight: 1.5,
-            }}>
-              <div style={{ fontSize: 11, color: "rgba(15, 23, 42, 0.6)", marginBottom: 4, fontWeight: 600 }}>
+            <div className="video-room-translation">
+              <div className="video-room-translation-label">
                 TRANSLATION
               </div>
               <div>{remoteTranslation}</div>
@@ -623,23 +679,46 @@ export default function VideoRoom({ roomId }) {
         </div>
       </div>
 
-      {/* Controls */}
-      <div style={controlsStyle}>
-        <div style={roleTextStyle}>
-          <div>
-            <b>Role:</b>{" "}
-            {isInitiator ? "Initiator (usually press Start Call)" : "Receiver"}
-          </div>
-          <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
-            Only one side should start to avoid offer glare.
-          </div>
-        </div>
-
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={startCall} disabled={!canStart} style={buttonStyle}>
+      {/* Bottom Section: Controls + Transcripts */}
+      <div className="video-room-bottom">
+        {/* Controls */}
+        <div className="video-room-controls">
+          <div className="video-room-button-group">
+            <button 
+              onClick={toggleMute}
+              className="video-room-mute-button"
+              title={isMuted ? "Unmute" : "Mute"}
+            >
+            {isMuted ? (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <line x1="1" y1="1" x2="23" y2="23"></line>
+                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
+                <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+            ) : (
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+                <line x1="12" y1="19" x2="12" y2="23"></line>
+                <line x1="8" y1="23" x2="16" y2="23"></line>
+              </svg>
+            )}
+          </button>
+          
+          <button 
+            onClick={startCall} 
+            disabled={!canStart} 
+            className={`video-room-button ${canStart ? 'can-start' : 'cannot-start'}`}
+          >
             Start Call
           </button>
-          <button onClick={endCall} disabled={!callActive} style={endButtonStyle}>
+          <button 
+            onClick={endCall} 
+            disabled={!callActive} 
+            className={`video-room-end-button ${callActive ? 'active' : 'inactive'}`}
+          >
             End Call
           </button>
         </div>
@@ -651,22 +730,21 @@ export default function VideoRoom({ roomId }) {
         change <b>SIGNAL_URL</b> from <b>localhost</b> to your laptop’s LAN IP.
       </div> */}
 
-      {/* TRANSCRIPTION + TRANSLATION */}
-      <div style={{ marginTop: 16 }}>
-        {/* {lines.map((l, i) => (
-          <div key={i} style={{ marginBottom: 8 }}>
-            <div><b>Transcript:</b> {l.transcript}</div>
-            {l.en ? <div><b>EN:</b> {l.en}</div> : null}
-          </div>
-        ))} */}
-        {lines.length > 0 && (
-          <div style={{ marginBottom: 8 }}>
-            <div><b>Transcript:</b> {lines[lines.length - 1].transcript}</div>
-            {lines[lines.length - 1].en && (
-              <div><b>EN:</b> {lines[lines.length - 1].en}</div>
+        {/* TRANSCRIPTION + TRANSLATION */}
+        <div className="video-room-transcripts">
+          <h3>Live Caption</h3>
+          <div className="video-room-transcript-scroll">
+            {lines.length > 0 ? (
+              <div className="video-room-transcript-item">
+                <div>{lines[lines.length - 1].en || lines[lines.length - 1].transcript}</div>
+              </div>
+            ) : (
+              <div className="video-room-transcript-empty">
+                Live captions will appear here during the call...
+              </div>
             )}
           </div>
-        )}
+        </div>
       </div>
     </div>
   );

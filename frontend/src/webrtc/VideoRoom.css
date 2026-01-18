@@ -1,179 +1,429 @@
+.video-room-wrap {
+  max-width: 1800px;
+  margin: 0 auto;
+  padding: 12px;
+  display: grid;
+  grid-template-rows: auto 1fr auto auto;
+  gap: 12px;
+  font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+  color: var(--text-primary);
+  height: 100vh;
+  overflow: hidden;
+}
 
-  .video-room-wrap {
-    max-width: 980px;
-    margin: 0 auto;
-    padding: 16px;
-    display: grid;
-    gap: 14px;
-    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
-    color: #0f172a;
-  }
+.back-button {
+  width: 40px;
+  height: 40px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--text-primary);
+}
 
-  .video-room-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 14px 14px;
-    border: 1px solid rgba(15, 23, 42, 0.12);
-    border-radius: 14px;
-    background: rgba(255,255,255,0.75);
-    backdrop-filter: blur(8px);
-  }
+.back-button:hover {
+  background: var(--bg-secondary);
+  border-color: var(--text-tertiary);
+}
 
-  .video-room-title {
-    display: grid;
-    gap: 4px;
-  }
+.back-button:active {
+  transform: scale(0.95);
+}
 
-  .video-room-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(15, 23, 42, 0.12);
-    background: rgba(15, 23, 42, 0.04);
-    font-size: 12px;
-    color: rgba(15, 23, 42, 0.75);
-    white-space: nowrap;
-  }
+.video-room-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-header);
+  box-shadow: var(--shadow-sm);
+  font-family: 'Outfit', sans-serif;
+}
 
-  .video-room-status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    padding: 6px 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(15, 23, 42, 0.12);
-    background: rgba(255,255,255,0.8);
-    font-size: 12px;
-    color: rgba(15, 23, 42, 0.8);
-    max-width: 420px;
-  }
+.video-room-logo-section {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-family: 'Outfit', sans-serif;
+}
 
-  .video-room-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 999px;
-    flex: 0 0 auto;
-  }
+.video-room-logo {
+  width: 40px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  background: transparent;
+  font-weight: 700;
+  font-size: 20px;
+  color: white;
+  font-family: 'Outfit', sans-serif;
+}
 
-  .video-room-dot.can-start {
-    background: #10b981;
-  }
-  .video-room-dot.cannot-start {
-    background: #64748b;
-  }
+.video-room-logo img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  border-radius: 6px;
+}
 
+.video-room-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-family: 'Outfit', sans-serif;
+}
+
+.video-room-title h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+  font-family: 'Outfit', sans-serif;
+}
+
+.video-room-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 10px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  font-size: 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.video-room-header-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-family: 'Outfit', sans-serif;
+}
+
+.video-room-status-pill {
+  display: inline-flex;
+  align-items: center;
+  font-family: 'Outfit', sans-serif;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 4px;
+  background: var(--bg-secondary);
+  font-size: 13px;
+  color: var(--text-secondary);
+  max-width: 420px;
+  font-weight: 500;
+}
+
+.theme-toggle {
+  width: 40px;
+  height: 40px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+.theme-toggle:hover {
+  background: var(--bg-secondary);
+  border-color: var(--text-tertiary);
+}
+
+.theme-toggle:active {
+  transform: scale(0.95);
+}
+
+.video-room-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex: 0 0 auto;
+  animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.video-room-dot.can-start {
+  background: #10b981;
+}
+
+.video-room-dot.cannot-start {
+  background: var(--text-muted);
+}
+
+.video-room-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+  flex: 1;
+  overflow: hidden;
+}
+
+@media (max-width: 968px) {
   .video-room-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 14px;
+    grid-template-columns: 1fr;
   }
+}
 
-  .video-room-card {
-    border: 1px solid rgba(15, 23, 42, 0.12);
-    border-radius: 16px;
-    overflow: hidden;
-    background: rgba(255,255,255,0.85);
-    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
-    display: grid;
-    grid-template-rows: auto 1fr;
-    min-height: 340px;
+.video-room-card {
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
+  display: grid;
+  grid-template-rows: auto 1fr;
+  height: 100%;
+  font-family: 'Outfit', sans-serif;
+}
+
+.video-room-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border-color);
+  background: var(--bg-secondary);
+  font-family: 'Outfit', sans-serif;
+}
+
+.video-room-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  letter-spacing: 0.01em;
+  font-family: 'Outfit', sans-serif;
+}
+
+.video-room-badge {
+  font-size: 10px;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 4px;
+  background: var(--bg-tertiary);
+  color: var(--text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  font-family: 'Outfit', sans-serif;
+}
+
+.video-room-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  background: var(--bg-tertiary);
+}
+
+.video-room-translation {
+  padding: 14px 16px;
+  background: var(--bg-secondary);
+  border-top: 1px solid var(--border-color);
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+
+.video-room-translation-label {
+  font-size: 10px;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.video-room-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.video-room-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-header);
+  box-shadow: var(--shadow-sm);
+}
+
+.video-room-button-group {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.video-room-mute-button {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  border: none;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: inherit;
+}
+
+.video-room-mute-button:hover {
+  background: var(--bg-tertiary);
+}
+
+.video-room-mute-button:active {
+  transform: scale(0.95);
+}
+
+.video-room-button {
+  padding: 10px 18px;
+  border-radius: 6px;
+  border: none;
+  font-weight: 500;
+  font-size: 14px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.video-room-button.can-start {
+  background: var(--accent-primary);
+  color: white;
+  cursor: pointer;
+}
+
+.video-room-button.can-start:hover {
+  background: var(--accent-hover);
+}
+
+.video-room-button.can-start:active {
+  transform: scale(0.98);
+}
+
+.video-room-button.cannot-start {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.video-room-end-button {
+  padding: 10px 18px;
+  border-radius: 6px;
+  border: none;
+  font-weight: 500;
+  font-size: 14px;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  font-family: inherit;
+}
+
+.video-room-end-button.active {
+  background: var(--accent-danger);
+  color: white;
+  cursor: pointer;
+}
+
+.video-room-end-button.active:hover {
+  background: #b91c1c;
+}
+
+.video-room-end-button.active:active {
+  transform: scale(0.98);
+}
+
+.video-room-end-button.inactive {
+  background: var(--bg-tertiary);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.video-room-transcripts {
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  background: var(--bg-card);
+  box-shadow: var(--shadow-sm);
+  display: flex;
+  flex-direction: column;
+  min-height: 120px;
+}
+
+.video-room-transcripts h3 {
+  margin: 0 0 12px 0;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  letter-spacing: -0.01em;
+}
+
+.video-room-transcript-scroll {
+  display: flex;
+  flex-direction: column;
+}
+
+.video-room-transcript-item {
+  padding: 14px 16px;
+  background: var(--bg-secondary);
+  border-radius: 6px;
+  border-left: 3px solid var(--accent-primary);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--text-primary);
+}
+
+.video-room-transcript-empty {
+  padding: 24px;
+  text-align: center;
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1;
+}
+
+@media (max-width: 968px) {
+  .video-room-wrap {
+    padding: 8px;
   }
-
-  .video-room-card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 10px 12px;
-    border-bottom: 1px solid rgba(15, 23, 42, 0.10);
-    background: rgba(15, 23, 42, 0.03);
-  }
-
-  .video-room-label {
-    font-size: 12px;
-    color: rgba(15, 23, 42, 0.70);
-    display: flex;
-    align-items: center;
-    gap: 8px;
-  }
-
-  .video-room-badge {
-    font-size: 12px;
-    padding: 4px 8px;
-    border-radius: 999px;
-    border: 1px solid rgba(15, 23, 42, 0.12);
-    background: rgba(255,255,255,0.8);
-    color: rgba(15, 23, 42, 0.70);
-  }
-
-  .video-room-video {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    background: linear-gradient(135deg, rgba(15, 23, 42, 0.10), rgba(15, 23, 42, 0.02));
-  }
-
+  
   .video-room-controls {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-    padding: 14px;
-    border: 1px solid rgba(15, 23, 42, 0.12);
-    border-radius: 14px;
-    background: rgba(255,255,255,0.75);
+    flex-wrap: wrap;
   }
-
-  .video-room-role-text {
-    font-size: 13px;
-    color: rgba(15, 23, 42, 0.75);
-    line-height: 1.2;
+  
+  .video-room-button-group {
+    flex-wrap: wrap;
+    justify-content: center;
   }
-
-  .video-room-button {
-    padding: 10px 14px;
-    border-radius: 12px;
-    border: 1px solid rgba(15, 23, 42, 0.12);
-    font-weight: 600;
-    transition: transform 0.05s ease, opacity 0.2s ease;
-    white-space: nowrap;
-    margin-right: 8px;
-  }
-  .video-room-button.can-start {
-    background: #0f172a;
-    color: white;
-    cursor: pointer;
-  }
-  .video-room-button.cannot-start {
-    background: rgba(15, 23, 42, 0.12);
-    color: rgba(15, 23, 42, 0.55);
-    cursor: not-allowed;
-  }
-
-  .video-room-end-button {
-    border-radius: 12px;
-    margin-right: 0;
-  }
-  .video-room-end-button.active {
-    background: #dc2626;
-    color: white;
-    cursor: pointer;
-  }
-  .video-room-end-button.inactive {
-    background: rgba(15, 23, 42, 0.12);
-    color: rgba(15, 23, 42, 0.55);
-    cursor: not-allowed;
-  }
-
-  .video-room-helper {
-    font-size: 12px;
-    color: rgba(15, 23, 42, 0.65);
-    line-height: 1.35;
-    padding: 10px 12px;
-    border-radius: 12px;
-    border: 1px dashed rgba(15, 23, 42, 0.18);
-    background: rgba(15, 23, 42, 0.02);
-  }
+}
