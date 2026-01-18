@@ -26,7 +26,9 @@ if not FFMPEG_PATH:
     )
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
+
+
 
 def any_audio_to_pcm16_mono_24khz(file_storage) -> bytes:
     with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f_in:
@@ -92,13 +94,15 @@ def whisper_transcribe(pcm_bytes: bytes) -> str:
     finally:
         os.unlink(out_path)  # Clean up temp file
 
-def detect_and_translate_if_needed(transcript: str) -> str:
-    """
-    Returns "" if English; otherwise returns English translation.
+def detect_and_translate_if_needed(transcript: str, language: str) -> str:
+    f"""
+    Returns "" if {language}; otherwise returns {language} translation.
     Uses a fast text model for language detection + translation.
     """
     if not transcript or not transcript.strip():
         return ""
+
+    print(language)
 
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -106,9 +110,9 @@ def detect_and_translate_if_needed(transcript: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "You detect whether text is English. "
-                    "If it is English, output exactly an empty string. "
-                    "If it is not English, output only the English translation (no extra words)."
+                    f"You detect whether text is {language}. "
+                    f"If it is {language}, output exactly an empty string. "
+                    f"If it is not {language}, output only the {language} translation (no extra words)."
                 ),
             },
             {"role": "user", "content": transcript},
@@ -123,6 +127,9 @@ def translate_if_non_english():
     print("="*60)
     if "audio" not in request.files:
         return jsonify(error="Missing form-data file field 'audio'."), 400
+    
+    # Get language from form data (not JSON, since we're using multipart/form-data)
+    language = request.form.get("remotePreferredLanguage", "English")
 
     try:
         print("🔄 Converting audio...")
@@ -131,11 +138,11 @@ def translate_if_non_english():
         transcript = whisper_transcribe(pcm)
         print(f"✅ FINAL TRANSCRIPT: '{transcript}'")
         print("🔄 Checking for translation...")
-        out = detect_and_translate_if_needed(transcript)
+        out = detect_and_translate_if_needed(transcript, language)
         if out:
             print(f"🌍 TRANSLATION: '{out}'")
         else:
-            print("✅ Already in English, no translation needed")
+            print(f"Already in {language}, no translation needed")
         print("="*60 + "\n")
         return jsonify(transcript=transcript, english_translation_or_empty=out)
     except Exception as e:

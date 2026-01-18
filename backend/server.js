@@ -4,10 +4,21 @@ const wss = new WebSocketServer({ port: 8080 });
 
 // roomId -> Set of sockets
 const rooms = new Map();
+// Track which clients are initiators
+const initiators = new Set();
 
 function getRoom(roomId) {
   if (!rooms.has(roomId)) rooms.set(roomId, new Set());
   return rooms.get(roomId);
+}
+
+function hasActiveInitiator(room) {
+  for (const client of room) {
+    if (initiators.has(client) && client.readyState === 1) {
+      return true;
+    }
+  }
+  return false;
 }
 
 wss.on("connection", (ws) => {
@@ -20,12 +31,49 @@ wss.on("connection", (ws) => {
 
     if (type === "join") {
       ws.roomId = roomId;
-      getRoom(roomId).add(ws);
+      const room = getRoom(roomId);
+      
+      // Clean up stale connections first
+      const staleClients = [];
+      room.forEach((client) => {
+        if (client.readyState !== 1) {
+          staleClients.push(client);
+        }
+      });
+      staleClients.forEach((client) => {
+        room.delete(client);
+        initiators.delete(client);
+      });
+      
+      room.add(ws);
+      const size = room.size;
 
-      // tell this client whether they are 1st or 2nd person
-      const size = getRoom(roomId).size;
-      ws.send(JSON.stringify({ type: "joined", roomId, isInitiator: size === 1 }));
+      // Determine if this client should be the initiator
+      let isInitiator = false;
+      if (size === 1) {
+        // First person in room
+        isInitiator = true;
+      } else {
+        // Check if there's already an active initiator
+        if (!hasActiveInitiator(room)) {
+          // No active initiator, this person should become the initiator
+          isInitiator = true;
+        }
+      }
+
+      if (isInitiator) {
+        initiators.add(ws);
+      }
+
+      ws.send(JSON.stringify({ type: "joined", roomId, isInitiator }));
       return;
+    }
+
+    if (type === "offer") {
+      // When someone sends an offer, mark them as initiator if not already
+      if (!initiators.has(ws)) {
+        initiators.add(ws);
+      }
     }
 
     // relay to everyone else in the room
@@ -41,8 +89,29 @@ wss.on("connection", (ws) => {
     if (!ws.roomId) return;
     const room = rooms.get(ws.roomId);
     if (!room) return;
+    const wasInitiator = initiators.has(ws);
     room.delete(ws);
-    if (room.size === 0) rooms.delete(ws.roomId);
+    initiators.delete(ws);
+    
+    if (room.size === 0) {
+      rooms.delete(ws.roomId);
+      return;
+    }
+    
+    // If the person who left was an initiator, check if someone else should become the initiator
+    if (wasInitiator && !hasActiveInitiator(room)) {
+      // Find the first remaining client and make them the initiator
+      for (const remainingClient of room) {
+        if (remainingClient.readyState === 1) {
+          initiators.add(remainingClient);
+          remainingClient.send(JSON.stringify({ 
+            type: "promote_to_initiator", 
+            roomId: ws.roomId 
+          }));
+          break;
+        }
+      }
+    }
   });
 });
 

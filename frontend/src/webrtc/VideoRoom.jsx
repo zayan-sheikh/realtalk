@@ -1,7 +1,4 @@
-import { useEffect, useRef, useState, useContext } from "react";
-import { useNavigate } from "react-router-dom";
-import { ThemeContext } from "../App";
-import "./VideoRoom.css";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 const PC_CONFIG = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -26,8 +23,9 @@ export default function VideoRoom({ roomId }) {
   const [isInitiator, setIsInitiator] = useState(false);
   const [callActive, setCallActive] = useState(false);
   const [firstCallStarted, setFirstCallStarted] = useState(false);
-  const [isMuted, setIsMuted] = useState(false);
-  const [callEnded, setCallEnded] = useState(false);
+  const [preferredLanguage, setPreferredLanguage] = useState("english");
+  const [remotePreferredLanguage, setRemotePreferredLanguage] = useState("english");
+  const remotePreferredLanguageRef = useRef("english"); // Use ref to access latest value in closures
 
   const SIGNAL_URL = "ws://35.183.199.110:8080";
 
@@ -47,6 +45,10 @@ export default function VideoRoom({ roomId }) {
   async function sendBlob(blob) {
     const form = new FormData();
     form.append("audio", blob, "chunk.webm");
+    // Use ref to get the latest value (avoids closure stale value issue)
+    form.append("remotePreferredLanguage", remotePreferredLanguageRef.current);
+
+    console.log("YOOOOO MY PARTNERS PREFERRED LANGUAGE", remotePreferredLanguageRef.current);
 
     const res = await fetch("http://localhost:4000/translate_if_non_english", {
       method: "POST",
@@ -56,6 +58,25 @@ export default function VideoRoom({ roomId }) {
     const data = await res.json();
     if (!res.ok) throw new Error(data?.error || "Request failed");
     return data;
+  }
+
+  async function changePreferredLanguage(language) {
+    try {
+      setPreferredLanguage(language);
+      try {
+        wsRef.current.send(JSON.stringify({
+          type: "preferredLanguage",
+          roomId,
+          preferredLanguage: language,
+        }));
+        console.log("Preferred language changed to:", language);
+      } catch (sendError) {
+        console.error("Failed to send preferred language:", sendError);
+      }
+    } catch (error) {
+      console.error("Failed to change preferred language:", error);
+      throw error;
+    }
   }
 
   function makeRecorder(stream) {
@@ -233,7 +254,81 @@ export default function VideoRoom({ roomId }) {
     analyserRef.current = null;
   }
 
+  // Helper function to ensure RTCPeerConnection is active
+  const ensureActiveConnection = useCallback(() => {
+    let pc = pcRef.current;
+    const ws = wsRef.current;
+    const localStream = localStreamRef.current;
 
+    if (!ws || !localStream) return null;
+
+    // If PC is closed, doesn't exist, or in a bad state, create a new one
+    const needsNewConnection = !pc || 
+      pc.signalingState === "closed" || 
+      pc.connectionState === "closed" ||
+      pc.connectionState === "failed" ||
+      pc.connectionState === "disconnected";
+    
+    if (needsNewConnection) {
+      // Close old connection if it exists
+      if (pc) {
+        try {
+          pc.close();
+        } catch (e) {
+          console.warn("Error closing old PC:", e);
+        }
+      }
+
+      pc = new RTCPeerConnection(PC_CONFIG);
+      pcRef.current = pc;
+
+      // Ensure local video element has the stream
+      if (localVideoRef.current && localVideoRef.current.srcObject !== localStream) {
+        localVideoRef.current.srcObject = localStream;
+      }
+
+      // Re-add tracks - check if they're still live, if not, get new ones
+      const tracksToAdd = [];
+      localStream.getTracks().forEach((t) => {
+        if (t.readyState === "live") {
+          tracksToAdd.push(t);
+        }
+      });
+
+      // If tracks are not live, we need to get new media
+      if (tracksToAdd.length === 0) {
+        console.warn("Local stream tracks are not live, need to get new media");
+        return null;
+      }
+
+      tracksToAdd.forEach((t) => {
+        try {
+          pc.addTrack(t, localStream);
+        } catch (e) {
+          console.warn("Error adding track:", e);
+        }
+      });
+
+      // Re-setup event handlers
+      pc.ontrack = (e) => {
+        if (e.streams && e.streams[0]) {
+          remoteVideoRef.current.srcObject = e.streams[0];
+        }
+      };
+
+      pc.onicecandidate = (e) => {
+        if (e.candidate && ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "ice", roomId, candidate: e.candidate }));
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        setStatus(`WebRTC: ${pc.connectionState}`);
+      };
+    }
+
+    return pc;
+  }, [roomId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -288,8 +383,11 @@ export default function VideoRoom({ roomId }) {
           return;
         }
 
-        const pc = pcRef.current;
-        if (!pc) return;
+        if (msg.type === "promote_to_initiator") {
+          setIsInitiator(true);
+          setStatus("Became initiator. You can start the call.");
+          return;
+        }
 
         if (msg.type === "end") {
           setStatus("Call ended by peer");
@@ -297,42 +395,81 @@ export default function VideoRoom({ roomId }) {
           setCallEnded(true);
           setIsLeaving(true);
           try {
-            pcRef.current?.getSenders().forEach((sender) => {
-              try { sender.track?.stop(); } catch {}  
-            });
-            pcRef.current?.close();
+            if (pcRef.current) {
+              // Don't stop the tracks, just close the connection
+              pcRef.current.close();
+              // Don't set to null, we'll check if it's closed and recreate it
+            }
           } catch {}
-          try {
-            localStreamRef.current?.getTracks().forEach((t) => t.stop());
-          } catch {}
-          remoteVideoRef.current.srcObject = null;
-          
-          // Auto-redirect after 2 seconds
-          setTimeout(() => {
-            navigate("/join");
-          }, 2000);
+          // Clear remote video but keep local video stream
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = null;
+          }
+          // Ensure local video is still showing
+          if (localVideoRef.current && localStreamRef.current) {
+            localVideoRef.current.srcObject = localStreamRef.current;
+          }
           return;
         }
 
         if (msg.type === "offer") {
+          // Ensure local video is showing
+          if (localVideoRef.current && localStreamRef.current) {
+            localVideoRef.current.srcObject = localStreamRef.current;
+          }
+
+          // Ensure connection is active before handling offer
+          const activePc = ensureActiveConnection();
+          if (!activePc) {
+            setStatus("Failed to create connection. Please try again.");
+            return;
+          }
+          
           setStatus("Received offer. Creating answer...");
-          await pc.setRemoteDescription(msg.sdp);
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          ws.send(JSON.stringify({ type: "answer", roomId, sdp: pc.localDescription }));
-          setCallActive(true);
+          try {
+            await activePc.setRemoteDescription(msg.sdp);
+            const answer = await activePc.createAnswer();
+            await activePc.setLocalDescription(answer);
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "answer", roomId, sdp: activePc.localDescription }));
+            }
+            setCallActive(true);
+          } catch (error) {
+            console.error("Failed to handle offer:", error);
+            setStatus("Failed to handle offer. Please try again.");
+          }
           return;
         }
 
         if (msg.type === "answer") {
+          // Ensure local video is showing
+          if (localVideoRef.current && localStreamRef.current) {
+            localVideoRef.current.srcObject = localStreamRef.current;
+          }
+
+          // Ensure connection is active before handling answer
+          const activePc = ensureActiveConnection();
+          if (!activePc) {
+            setStatus("Failed to create connection. Please try again.");
+            return;
+          }
+          
           setStatus("Received answer. Connecting...");
-          await pc.setRemoteDescription(msg.sdp);
+          try {
+            await activePc.setRemoteDescription(msg.sdp);
+          } catch (error) {
+            console.error("Failed to set remote description:", error);
+            setStatus("Failed to set remote description. Please try again.");
+          }
           return;
         }
 
         if (msg.type === "ice") {
+          const activePc = ensureActiveConnection();
+          if (!activePc) return;
+          
           try {
-            await pc.addIceCandidate(msg.candidate);
+            await activePc.addIceCandidate(msg.candidate);
           } catch (e) {
             console.warn("ICE add failed", e);
           }
@@ -343,6 +480,14 @@ export default function VideoRoom({ roomId }) {
           const receivedTranslation = msg.translation || "";
           console.log("Received translation from other user:", receivedTranslation);
           setRemoteTranslation(receivedTranslation);
+          return;
+        }
+
+        if (msg.type === "preferredLanguage") {
+          const remoteUserPreferredLanguage = msg.preferredLanguage || "english";
+          console.log("Received preferred language from other user:", remoteUserPreferredLanguage);
+          setRemotePreferredLanguage(remoteUserPreferredLanguage);
+          remotePreferredLanguageRef.current = remoteUserPreferredLanguage; // Update ref for closures
           return;
         }
       };
@@ -369,11 +514,23 @@ export default function VideoRoom({ roomId }) {
     };
   }, [roomId]);
 
-
   const startCall = async () => {
     const ws = wsRef.current;
-    const pc = pcRef.current;
-    if (!ws || !pc) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setStatus("WebSocket not ready. Please wait...");
+      return;
+    }
+
+    // Ensure local video is showing
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
+
+    const pc = ensureActiveConnection();
+    if (!pc) {
+      setStatus("Failed to create connection. Please try again.");
+      return;
+    }
 
     if (!firstCallStarted) {
       setFirstCallStarted(true);
@@ -381,10 +538,15 @@ export default function VideoRoom({ roomId }) {
     }
 
     setStatus("Creating offer...");
-    const offer = await pc.createOffer();
-    await pc.setLocalDescription(offer);
-    ws.send(JSON.stringify({ type: "offer", roomId, sdp: pc.localDescription }));
-    setCallActive(true);
+    try {
+      const offer = await pc.createOffer();
+      await pc.setLocalDescription(offer);
+      ws.send(JSON.stringify({ type: "offer", roomId, sdp: pc.localDescription }));
+      setCallActive(true);
+    } catch (error) {
+      console.error("Failed to create offer:", error);
+      setStatus("Failed to start call. Please try again.");
+    }
   };
 
   const endCall = () => {
@@ -393,17 +555,25 @@ export default function VideoRoom({ roomId }) {
     setCallEnded(true);
     setIsLeaving(true);
     try {
-      pcRef.current?.getSenders().forEach((sender) => {
-        try { sender.track?.stop(); } catch {}
-      });
-      pcRef.current?.close();
+      if (pcRef.current) {
+        // Don't stop the tracks, just close the connection
+        pcRef.current.close();
+        // Don't set to null, we'll check if it's closed and recreate it
+      }
     } catch {}
-    try {
-      localStreamRef.current?.getTracks().forEach((t) => t.stop());
-    } catch {}
+    // Clear remote video but keep local video stream
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
+    // Ensure local video is still showing
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
     // notify peer to end call
     try {
-      wsRef.current?.send(JSON.stringify({ type: "end", roomId }));
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "end", roomId }));
+      }
     } catch {}
     
     // Auto-redirect after 2 seconds
@@ -617,6 +787,27 @@ export default function VideoRoom({ roomId }) {
     background: "rgba(15, 23, 42, 0.02)",
   };
 
+  const selectStyle = {
+    padding: "8px 12px",
+    borderRadius: 8,
+    border: "1px solid rgba(15, 23, 42, 0.12)",
+    background: "rgba(255,255,255,0.9)",
+    color: "rgba(15, 23, 42, 0.85)",
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: "pointer",
+    outline: "none",
+    transition: "border-color 0.2s ease",
+  };
+
+  const selectLabelStyle = {
+    fontSize: 12,
+    color: "rgba(15, 23, 42, 0.70)",
+    marginRight: 8,
+    display: "flex",
+    alignItems: "center",
+  };
+
   return (
     <div className="video-room-wrap">
       {/* Header */}
@@ -710,39 +901,52 @@ export default function VideoRoom({ roomId }) {
         </div>
       </div>
 
-      {/* Bottom Section: Controls + Transcripts */}
-      <div className="video-room-bottom">
-        {/* Controls */}
-        <div className="video-room-controls">
-          <div className="video-room-button-group">
-            <button 
-              onClick={toggleMute}
-              className="video-room-mute-button"
-              title={isMuted ? "Unmute" : "Mute"}
+      {/* Controls */}
+      <div style={controlsStyle}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={roleTextStyle}>
+            <div>
+              <b>Role:</b>{" "}
+              {isInitiator ? "Initiator (usually press Start Call)" : "Receiver"}
+            </div>
+            <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
+              Only one side should start to avoid offer glare.
+            </div>
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={selectLabelStyle}>
+              <b>Preferred Language:</b>
+            </label>
+            <select
+              value={preferredLanguage}
+              onChange={(e) => changePreferredLanguage(e.target.value)}
+              style={selectStyle}
+              onMouseEnter={(e) => {
+                e.target.style.borderColor = "rgba(15, 23, 42, 0.3)";
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.borderColor = "rgba(15, 23, 42, 0.12)";
+              }}
             >
-            {isMuted ? (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <line x1="1" y1="1" x2="23" y2="23"></line>
-                <path d="M9 9v3a3 3 0 0 0 5.12 2.12M15 9.34V4a3 3 0 0 0-5.94-.6"></path>
-                <path d="M17 16.95A7 7 0 0 1 5 12v-2m14 0v2a7 7 0 0 1-.11 1.23"></path>
-                <line x1="12" y1="19" x2="12" y2="23"></line>
-                <line x1="8" y1="23" x2="16" y2="23"></line>
-              </svg>
-            ) : (
-              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"></path>
-                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
-                <line x1="12" y1="19" x2="12" y2="23"></line>
-                <line x1="8" y1="23" x2="16" y2="23"></line>
-              </svg>
-            )}
-          </button>
-          
-          <button 
-            onClick={startCall} 
-            disabled={!canStart} 
-            className={`video-room-button ${canStart ? 'can-start' : 'cannot-start'}`}
-          >
+              <option value="english">English</option>
+              <option value="hindi">Hindi</option>
+              <option value="korean">Korean</option>
+              <option value="arabic">Arabic</option>
+              <option value="french">French</option>
+              <option value="spanish">Spanish</option>
+              <option value="portuguese">Portuguese</option>
+              <option value="russian">Russian</option>
+              <option value="turkish">Turkish</option>
+              <option value="italian">Italian</option>
+              <option value="german">German</option>
+              <option value="japanese">Japanese</option>
+              <option value="korean">Korean</option>
+            </select>
+          </div>
+        </div>
+
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={startCall} disabled={!canStart} style={buttonStyle}>
             Start Call
           </button>
           <button 
@@ -761,21 +965,22 @@ export default function VideoRoom({ roomId }) {
         change <b>SIGNAL_URL</b> from <b>localhost</b> to your laptop’s LAN IP.
       </div> */}
 
-        {/* TRANSCRIPTION + TRANSLATION */}
-        <div className="video-room-transcripts">
-          <h3>Live Caption</h3>
-          <div className="video-room-transcript-scroll">
-            {lines.length > 0 ? (
-              <div className="video-room-transcript-item">
-                <div>{lines[lines.length - 1].en || lines[lines.length - 1].transcript}</div>
-              </div>
-            ) : (
-              <div className="video-room-transcript-empty">
-                Live captions will appear here during the call...
-              </div>
+      {/* TRANSCRIPTION + TRANSLATION */}
+      <div style={{ marginTop: 16 }}>
+        {/* {lines.map((l, i) => (
+          <div key={i} style={{ marginBottom: 8 }}>
+            <div><b>Transcript:</b> {l.transcript}</div>
+            {l.en ? <div><b>EN:</b> {l.en}</div> : null}
+          </div>
+        ))} */}
+        {/* {lines.length > 0 && (
+          <div style={{ marginBottom: 8 }}>
+            <div><b>Transcript:</b> {lines[lines.length - 1].transcript}</div>
+            {lines[lines.length - 1].en && (
+              <div><b>EN:</b> {lines[lines.length - 1].en}</div>
             )}
           </div>
-        </div>
+        )} */}
       </div>
 
       {/* Leave Confirmation Modal */}
