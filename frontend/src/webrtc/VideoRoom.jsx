@@ -33,6 +33,7 @@ export default function VideoRoom({ roomId }) {
   const [isRecording, setIsRecording] = useState(false);
   const [lines, setLines] = useState([]);
   const [err, setErr] = useState("");
+  const [remoteTranslation, setRemoteTranslation] = useState("");
   const CHUNK_MS = 2500; // tune: 2000–4000
 
   async function sendBlob(blob) {
@@ -77,8 +78,31 @@ export default function VideoRoom({ roomId }) {
 
       try {
         const data = await sendBlob(blob);
-        const newLine = { transcript: data.transcript, en: data.english_translation_or_empty };
+        const translation = data.english_translation_or_empty || "";
+        const newLine = { transcript: data.transcript, en: translation };
         setLines((p) => [...p, newLine]);
+        
+        // Send the English translation to the other user if it exists
+        if (translation && translation.trim() !== "" && wsRef.current?.readyState === WebSocket.OPEN && roomId) {
+          try {
+            wsRef.current.send(JSON.stringify({
+              type: "translation",
+              roomId,
+              translation: translation,
+            }));
+            console.log("Sent translation to other user:", translation);
+          } catch (sendError) {
+            console.error("Failed to send translation:", sendError);
+          }
+        } else {
+          if (!translation || translation.trim() === "") {
+            console.log("No translation to send (empty)");
+          } else if (wsRef.current?.readyState !== WebSocket.OPEN) {
+            console.log("WebSocket not open, readyState:", wsRef.current?.readyState);
+          } else if (!roomId) {
+            console.log("RoomId not available");
+          }
+        }
       } catch (e) {
         setErr(String(e.message || e));
       } finally {
@@ -297,6 +321,14 @@ export default function VideoRoom({ roomId }) {
           } catch (e) {
             console.warn("ICE add failed", e);
           }
+          return;
+        }
+
+        if (msg.type === "translation") {
+          const receivedTranslation = msg.translation || "";
+          console.log("Received translation from other user:", receivedTranslation);
+          setRemoteTranslation(receivedTranslation);
+          return;
         }
       };
 
@@ -573,6 +605,21 @@ export default function VideoRoom({ roomId }) {
             <span style={badgeStyle}>Live</span>
           </div>
           <video ref={remoteVideoRef} autoPlay playsInline style={videoStyle} />
+          {remoteTranslation && (
+            <div style={{
+              padding: "12px",
+              background: "rgba(15, 23, 42, 0.05)",
+              borderTop: "1px solid rgba(15, 23, 42, 0.10)",
+              fontSize: 14,
+              color: "rgba(15, 23, 42, 0.85)",
+              lineHeight: 1.5,
+            }}>
+              <div style={{ fontSize: 11, color: "rgba(15, 23, 42, 0.6)", marginBottom: 4, fontWeight: 600 }}>
+                TRANSLATION
+              </div>
+              <div>{remoteTranslation}</div>
+            </div>
+          )}
         </div>
       </div>
 
