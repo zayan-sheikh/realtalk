@@ -26,7 +26,7 @@ if not FFMPEG_PATH:
     )
 
 app = Flask(__name__)
-CORS(app)
+CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True)
 
 
 
@@ -151,6 +151,14 @@ def translate_if_non_english():
         traceback.print_exc()
         return jsonify(error=str(e)), 400
 
+@app.post("/change_preferred_language")
+def change_preferred_language():
+    if not request.is_json:
+        return jsonify(error="Request must be JSON."), 400
+    if "language" not in request.json:
+        return jsonify(error="Missing JSON field 'language'."), 400
+    language = request.json["language"]
+    return jsonify(message=f"Preferred language changed to {language}."), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=4000, debug=True)
