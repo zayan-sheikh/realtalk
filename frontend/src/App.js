@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, useParams, useNavigate } from "react-router-dom";
+import { BrowserRouter, Routes, Route, useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { createContext, useState, useEffect, useContext } from "react";
 import VideoRoom from "./webrtc/VideoRoom";
 import "./App.css";
@@ -201,16 +201,17 @@ function LandingPage() {
 function JoinPage() {
   const navigate = useNavigate();
   const [roomId, setRoomId] = useState("");
+  const [voiceGender, setVoiceGender] = useState("feminine");
   const { theme, toggleTheme } = useContext(ThemeContext);
 
   const createNewRoom = () => {
     const id = Math.random().toString(36).substring(2, 9);
-    navigate(`/call/${id}`);
+    navigate(`/call/${id}?voice=${voiceGender}`);
   };
 
   const joinRoom = () => {
     if (roomId.trim()) {
-      navigate(`/call/${roomId.trim()}`);
+      navigate(`/call/${roomId.trim()}?voice=${voiceGender}`);
     }
   };
 
@@ -233,6 +234,35 @@ function JoinPage() {
 
         <div className="home-card">
           <h2>Join or Create a Room</h2>
+          
+          <div className="home-input-group" style={{ marginBottom: '16px' }}>
+            <label style={{ 
+              fontSize: '14px', 
+              fontWeight: 500, 
+              color: 'var(--text-primary)', 
+              marginBottom: '8px', 
+              display: 'block' 
+            }}>
+              Your voice type (what your partner hears)
+            </label>
+            <div style={{ display: 'flex', gap: '12px' }}>
+              <button
+                onClick={() => setVoiceGender("feminine")}
+                className={`home-button ${voiceGender === "feminine" ? "primary" : "secondary"}`}
+                style={{ flex: 1 }}
+              >
+                Feminine Voice
+              </button>
+              <button
+                onClick={() => setVoiceGender("masculine")}
+                className={`home-button ${voiceGender === "masculine" ? "primary" : "secondary"}`}
+                style={{ flex: 1 }}
+              >
+                Masculine Voice
+              </button>
+            </div>
+          </div>
+
           <div className="home-input-group">
             <input
               type="text"
@@ -280,7 +310,9 @@ function JoinPage() {
 
 function CallPage() {
   const { roomId } = useParams();
-  return <VideoRoom roomId={roomId} />;
+  const [searchParams] = useSearchParams();
+  const voiceGender = searchParams.get("voice") || "feminine";
+  return <VideoRoom roomId={roomId} voiceGender={voiceGender} />;
 }
 
 export default function App() {
