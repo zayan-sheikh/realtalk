@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, useCallback } from "react";
+import { encryptTranslation, decryptTranslation } from "../utils/encryption";
 
 const PC_CONFIG = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -85,18 +86,21 @@ export default function VideoRoom({ roomId }) {
         // Send the English translation to the other user if it exists
         if (translation && translation.trim() !== "" && wsRef.current?.readyState === WebSocket.OPEN && roomId) {
           try {
+            const encryptedTranslation = await encryptTranslation(translation, roomId);
+
             wsRef.current.send(JSON.stringify({
               type: "translation",
               roomId,
-              translation: translation,
+              // translation: translation,
+              encryptedTranslation: encryptedTranslation,
             }));
-            console.log("Sent translation to other user:", translation);
+            console.log("Sent encrypted translation to other user:", translation);
           } catch (sendError) {
-            console.error("Failed to send translation:", sendError);
+            console.error("Failed to send encrypted translation:", sendError);
           }
         } else {
-          if (!translation || translation.trim() === "") {
-            console.log("No translation to send (empty)");
+          if (!encryptedTranslation || encryptedTranslation.trim() === "") {
+            console.log("No encrypted translation to send (empty)");
           } else if (wsRef.current?.readyState !== WebSocket.OPEN) {
             console.log("WebSocket not open, readyState:", wsRef.current?.readyState);
           } else if (!roomId) {
@@ -446,9 +450,21 @@ export default function VideoRoom({ roomId }) {
         }
 
         if (msg.type === "translation") {
-          const receivedTranslation = msg.translation || "";
-          console.log("Received translation from other user:", receivedTranslation);
-          setRemoteTranslation(receivedTranslation);
+          if (msg.encryptedTranslation && roomId) {
+            try {
+              const decryptedTranslation = await decryptTranslation(msg.encryptedTranslation, roomId);
+              console.log("Received and decrypted translation from other user:", decryptedTranslation);
+              setRemoteTranslation(decryptedTranslation);
+            } catch (decryptError) {
+              console.error("Failed to decrypt translation:", decryptError);
+              setRemoteTranslation("");
+            }
+          } else {
+            // console.log("No encrypted translation to receive (empty)");
+            const receivedTranslation = msg.translation || "";
+            console.log("Received translation from other user:", receivedTranslation);
+            setRemoteTranslation(receivedTranslation);
+          }
           return;
         }
       };
