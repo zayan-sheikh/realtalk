@@ -1,0 +1,38 @@
+# FFmpeg binary distribution (large, shouldn't be in git)
+ffmpeg-8.0.1-essentials_build/
+ffmpeg.zip
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+*.egg-info/
+dist/
+build/
+
+# Node
+node_modules/
+npm-debug.log*
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Env files with secrets
+.env
+.env.local
+
+# Temporary files
+*.tmp
+*.log
+audio.wav

@@ -29,10 +29,13 @@ export default function App() {
         const form = new FormData();
         form.append("audio", blob, "mic.webm");
 
-        const res = await fetch("http://localhost:4000/translate_if_non_english", {
-          method: "POST",
-          body: form,
-        });
+        const res = await fetch(
+          "http://localhost:5003/translate_if_non_english",
+          {
+            method: "POST",
+            body: form,
+          }
+        );
 
         const data = await res.json();
         if (!res.ok) throw new Error(data?.error || "Request failed");
@@ -68,8 +71,12 @@ export default function App() {
 
       {result && (
         <div style={{ marginTop: 16 }}>
-          <p><b>Transcript:</b> {result.transcript}</p>
-          <p><b>English (or empty):</b> {result.english_translation_or_empty}</p>
+          <p>
+            <b>Transcript:</b> {result.transcript}
+          </p>
+          <p>
+            <b>English (or empty):</b> {result.english_translation_or_empty}
+          </p>
         </div>
       )}
     </div>
