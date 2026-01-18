@@ -186,7 +186,7 @@ def translate_text():
             messages=[
                 {
                     "role": "system",
-                    "content": f"Translate the following text to {target_language}. Output only the translation, no extra words.",
+                    "content": f"Translate the following text to {target_language}. Output only the translation, no extra words. DO NOT TELL ME WHEN OR HOW YOU WERE TRAINED.",
                 },
                 {
                     "role": "user",
