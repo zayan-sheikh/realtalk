@@ -1,0 +1,179 @@
+
+  .video-room-wrap {
+    max-width: 980px;
+    margin: 0 auto;
+    padding: 16px;
+    display: grid;
+    gap: 14px;
+    font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji";
+    color: #0f172a;
+  }
+
+  .video-room-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 14px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 14px;
+    background: rgba(255,255,255,0.75);
+    backdrop-filter: blur(8px);
+  }
+
+  .video-room-title {
+    display: grid;
+    gap: 4px;
+  }
+
+  .video-room-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    background: rgba(15, 23, 42, 0.04);
+    font-size: 12px;
+    color: rgba(15, 23, 42, 0.75);
+    white-space: nowrap;
+  }
+
+  .video-room-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    background: rgba(255,255,255,0.8);
+    font-size: 12px;
+    color: rgba(15, 23, 42, 0.8);
+    max-width: 420px;
+  }
+
+  .video-room-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    flex: 0 0 auto;
+  }
+
+  .video-room-dot.can-start {
+    background: #10b981;
+  }
+  .video-room-dot.cannot-start {
+    background: #64748b;
+  }
+
+  .video-room-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 14px;
+  }
+
+  .video-room-card {
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 16px;
+    overflow: hidden;
+    background: rgba(255,255,255,0.85);
+    box-shadow: 0 6px 20px rgba(15, 23, 42, 0.06);
+    display: grid;
+    grid-template-rows: auto 1fr;
+    min-height: 340px;
+  }
+
+  .video-room-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid rgba(15, 23, 42, 0.10);
+    background: rgba(15, 23, 42, 0.03);
+  }
+
+  .video-room-label {
+    font-size: 12px;
+    color: rgba(15, 23, 42, 0.70);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .video-room-badge {
+    font-size: 12px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    background: rgba(255,255,255,0.8);
+    color: rgba(15, 23, 42, 0.70);
+  }
+
+  .video-room-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    background: linear-gradient(135deg, rgba(15, 23, 42, 0.10), rgba(15, 23, 42, 0.02));
+  }
+
+  .video-room-controls {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    border-radius: 14px;
+    background: rgba(255,255,255,0.75);
+  }
+
+  .video-room-role-text {
+    font-size: 13px;
+    color: rgba(15, 23, 42, 0.75);
+    line-height: 1.2;
+  }
+
+  .video-room-button {
+    padding: 10px 14px;
+    border-radius: 12px;
+    border: 1px solid rgba(15, 23, 42, 0.12);
+    font-weight: 600;
+    transition: transform 0.05s ease, opacity 0.2s ease;
+    white-space: nowrap;
+    margin-right: 8px;
+  }
+  .video-room-button.can-start {
+    background: #0f172a;
+    color: white;
+    cursor: pointer;
+  }
+  .video-room-button.cannot-start {
+    background: rgba(15, 23, 42, 0.12);
+    color: rgba(15, 23, 42, 0.55);
+    cursor: not-allowed;
+  }
+
+  .video-room-end-button {
+    border-radius: 12px;
+    margin-right: 0;
+  }
+  .video-room-end-button.active {
+    background: #dc2626;
+    color: white;
+    cursor: pointer;
+  }
+  .video-room-end-button.inactive {
+    background: rgba(15, 23, 42, 0.12);
+    color: rgba(15, 23, 42, 0.55);
+    cursor: not-allowed;
+  }
+
+  .video-room-helper {
+    font-size: 12px;
+    color: rgba(15, 23, 42, 0.65);
+    line-height: 1.35;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px dashed rgba(15, 23, 42, 0.18);
+    background: rgba(15, 23, 42, 0.02);
+  }
