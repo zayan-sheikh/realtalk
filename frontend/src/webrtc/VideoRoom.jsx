@@ -132,8 +132,8 @@ export default function VideoRoom({ roomId }) {
             console.error("Failed to send encrypted translation:", sendError);
           }
         } else {
-          if (!encryptedTranslation || encryptedTranslation.trim() === "") {
-            console.log("No encrypted translation to send (empty)");
+          if (!translation || translation.trim() === "") {
+            console.log("No translation to send (empty)");
           } else if (wsRef.current?.readyState !== WebSocket.OPEN) {
             console.log("WebSocket not open, readyState:", wsRef.current?.readyState);
           } else if (!roomId) {

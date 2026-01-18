@@ -75,7 +75,11 @@ async function deriveKey(password, salt = null) {
     combined.set(new Uint8Array(encrypted), iv.length);
   
     // Convert to base64 for transmission
-    return btoa(String.fromCharCode(...combined));
+    let binary = '';
+    for (let i = 0; i < combined.length; i++) {
+      binary += String.fromCharCode(combined[i]);
+    }
+    return btoa(binary);
   }
   
   /**
