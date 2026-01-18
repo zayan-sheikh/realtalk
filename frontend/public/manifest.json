@@ -1,6 +1,6 @@
 {
-  "short_name": "React App",
-  "name": "Create React App Sample",
+  "short_name": "RealTalk",
+  "name": "RealTalk - Real-time Video Calls with Live Translation",
   "icons": [
     {
       "src": "favicon.ico",

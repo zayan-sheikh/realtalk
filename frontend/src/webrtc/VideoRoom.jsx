@@ -5,6 +5,7 @@ const PC_CONFIG = {
 };
 
 export default function VideoRoom({ roomId }) {
+  const navigate = useNavigate();
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
 
@@ -37,6 +38,8 @@ export default function VideoRoom({ roomId }) {
   const [lines, setLines] = useState([]);
   const [err, setErr] = useState("");
   const [remoteTranslation, setRemoteTranslation] = useState("");
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
   const CHUNK_MS = 2500; // tune: 2000–4000
 
   async function sendBlob(blob) {
@@ -389,6 +392,8 @@ export default function VideoRoom({ roomId }) {
         if (msg.type === "end") {
           setStatus("Call ended by peer");
           setCallActive(false);
+          setCallEnded(true);
+          setIsLeaving(true);
           try {
             if (pcRef.current) {
               // Don't stop the tracks, just close the connection
@@ -547,6 +552,8 @@ export default function VideoRoom({ roomId }) {
   const endCall = () => {
     setStatus("Call ended");
     setCallActive(false);
+    setCallEnded(true);
+    setIsLeaving(true);
     try {
       if (pcRef.current) {
         // Don't stop the tracks, just close the connection
@@ -568,9 +575,61 @@ export default function VideoRoom({ roomId }) {
         wsRef.current.send(JSON.stringify({ type: "end", roomId }));
       }
     } catch {}
+    
+    // Auto-redirect after 2 seconds
+    setTimeout(() => {
+      navigate("/join");
+    }, 2000);
+  };
+
+  const toggleMute = () => {
+    if (localStreamRef.current) {
+      const audioTrack = localStreamRef.current.getAudioTracks()[0];
+      if (audioTrack) {
+        audioTrack.enabled = !audioTrack.enabled;
+        setIsMuted(!audioTrack.enabled);
+      }
+    }
+  };
+
+  const handleBack = () => {
+    if (callEnded) {
+      navigate("/join");
+      return;
+    }
+    
+    setShowLeaveModal(true);
+  };
+
+  const confirmLeave = () => {
+    setShowLeaveModal(false);
+    setIsLeaving(true);
+    
+    // Clean up
+    try {
+      pcRef.current?.getSenders().forEach((sender) => {
+        try { sender.track?.stop(); } catch {}
+      });
+      pcRef.current?.close();
+    } catch {}
+    try {
+      localStreamRef.current?.getTracks().forEach((t) => t.stop());
+    } catch {}
+    try {
+      wsRef.current?.send(JSON.stringify({ type: "end", roomId }));
+    } catch {}
+    
+    setTimeout(() => {
+      navigate("/join");
+    }, 1500);
+  };
+
+  const cancelLeave = () => {
+    setShowLeaveModal(false);
   };
 
   const canStart = (!firstCallStarted && isInitiator && !callActive) || (firstCallStarted && !callActive);
+  const { theme, toggleTheme } = useContext(ThemeContext);
 
   const wrapStyle = {
     maxWidth: 980,
@@ -750,46 +809,72 @@ export default function VideoRoom({ roomId }) {
   };
 
   return (
-    <div style={wrapStyle}>
+    <div className="video-room-wrap">
       {/* Header */}
-      <div style={headerStyle}>
-        <div style={titleStyle}>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>Video Room</div>
-          <div style={roomPill}>
-            <span style={{ opacity: 0.7 }}>Room</span>
-            <span style={{ fontWeight: 600 }}>{roomId}</span>
+      <div className="video-room-header">
+        <button className="back-button" onClick={handleBack} title="Leave meeting">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <path d="M19 12H5M12 19l-7-7 7-7"/>
+          </svg>
+        </button>
+        
+        <div className="video-room-logo-section">
+          <div className="video-room-logo">
+            <img src="/logo.svg" alt="Logo" onError={(e) => { e.target.style.display = 'none'; e.target.parentNode.textContent = 'RT'; }} />
+          </div>
+          <div className="video-room-title">
+            <h1><strong>REAL</strong>TALK</h1>
+            <div className="video-room-pill">
+              <span style={{ opacity: 0.7 }}>Room</span>
+              <span style={{ fontWeight: 600 }}>{roomId}</span>
+            </div>
           </div>
         </div>
 
-        <div style={statusPill} title={status}>
-          <span style={dot} />
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {status}
-          </span>
+        <div className="video-room-header-right">
+          <div className="video-room-status-pill" title={status}>
+            <span className={`video-room-dot ${canStart ? 'can-start' : 'cannot-start'}`} />
+            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {status}
+            </span>
+          </div>
+          
+          <button className="theme-toggle" onClick={toggleTheme} title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
+            {theme === 'light' ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="5"></circle>
+                <line x1="12" y1="1" x2="12" y2="3"></line>
+                <line x1="12" y1="21" x2="12" y2="23"></line>
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                <line x1="1" y1="12" x2="3" y2="12"></line>
+                <line x1="21" y1="12" x2="23" y2="12"></line>
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+              </svg>
+            )}
+          </button>
         </div>
       </div>
 
       {/* Videos */}
-      <div style={gridStyle}>
-        <div style={cardStyle}>
-          <div style={cardHeaderStyle}>
-            <div style={labelStyle}>
-              <span style={{ width: 8, height: 8, borderRadius: 999, background: "#3b82f6" }} />
-              Local
+      <div className="video-room-grid">
+        <div className="video-room-card">
+          <div className="video-room-card-header">
+            <div className="video-room-label">
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-primary)' }} />
+              You
             </div>
-            <span style={badgeStyle}>Muted</span>
+            {isMuted && <span className="video-room-badge">Muted</span>}
           </div>
-          <video ref={localVideoRef} autoPlay muted playsInline style={videoStyle} />
+          <video ref={localVideoRef} autoPlay muted playsInline className="video-room-video" />
           {lines.length > 0 && lines[lines.length - 1].en && (
-            <div style={{
-              padding: "12px",
-              background: "rgba(15, 23, 42, 0.05)",
-              borderTop: "1px solid rgba(15, 23, 42, 0.10)",
-              fontSize: 14,
-              color: "rgba(15, 23, 42, 0.85)",
-              lineHeight: 1.5,
-            }}>
-              <div style={{ fontSize: 11, color: "rgba(15, 23, 42, 0.6)", marginBottom: 4, fontWeight: 600 }}>
+            <div className="video-room-translation">
+              <div className="video-room-translation-label">
                 TRANSLATION
               </div>
               <div>{lines[lines.length - 1].en}</div>
@@ -797,25 +882,17 @@ export default function VideoRoom({ roomId }) {
           )}
         </div>
 
-        <div style={cardStyle}>
-          <div style={cardHeaderStyle}>
-            <div style={labelStyle}>
-              <span style={{ width: 8, height: 8, borderRadius: 999, background: "#a855f7" }} />
+        <div className="video-room-card">
+          <div className="video-room-card-header">
+            <div className="video-room-label">
+              <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-secondary)' }} />
               Remote
             </div>
-            <span style={badgeStyle}>Live</span>
           </div>
-          <video ref={remoteVideoRef} autoPlay playsInline style={videoStyle} />
+          <video ref={remoteVideoRef} autoPlay playsInline className="video-room-video" />
           {remoteTranslation && (
-            <div style={{
-              padding: "12px",
-              background: "rgba(15, 23, 42, 0.05)",
-              borderTop: "1px solid rgba(15, 23, 42, 0.10)",
-              fontSize: 14,
-              color: "rgba(15, 23, 42, 0.85)",
-              lineHeight: 1.5,
-            }}>
-              <div style={{ fontSize: 11, color: "rgba(15, 23, 42, 0.6)", marginBottom: 4, fontWeight: 600 }}>
+            <div className="video-room-translation">
+              <div className="video-room-translation-label">
                 TRANSLATION
               </div>
               <div>{remoteTranslation}</div>
@@ -872,7 +949,11 @@ export default function VideoRoom({ roomId }) {
           <button onClick={startCall} disabled={!canStart} style={buttonStyle}>
             Start Call
           </button>
-          <button onClick={endCall} disabled={!callActive} style={endButtonStyle}>
+          <button 
+            onClick={endCall} 
+            disabled={!callActive} 
+            className={`video-room-end-button ${callActive ? 'active' : 'inactive'}`}
+          >
             End Call
           </button>
         </div>
@@ -901,6 +982,41 @@ export default function VideoRoom({ roomId }) {
           </div>
         )} */}
       </div>
+
+      {/* Leave Confirmation Modal */}
+      {showLeaveModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+            </div>
+            <h2>Leave Meeting?</h2>
+            <p>Are you sure you want to leave this meeting? This action cannot be undone.</p>
+            <div className="modal-actions">
+              <button className="modal-button cancel" onClick={cancelLeave}>
+                Stay in Meeting
+              </button>
+              <button className="modal-button confirm" onClick={confirmLeave}>
+                Leave Meeting
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading Overlay */}
+      {isLeaving && (
+        <div className="loading-overlay">
+          <div className="loading-content">
+            <div className="loading-spinner"></div>
+            <p>Leaving meeting...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
