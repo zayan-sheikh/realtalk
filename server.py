@@ -33,6 +33,15 @@ def any_audio_to_pcm16_mono_24khz(file_storage) -> bytes:
         file_storage.save(f_in.name)
         in_path = f_in.name
 
+    # Check file size
+    file_size = os.path.getsize(in_path)
+    if file_size == 0:
+        os.unlink(in_path)
+        raise ValueError("Uploaded audio file is empty")
+    if file_size < 100:  # WebM files need at least some data
+        os.unlink(in_path)
+        raise ValueError(f"Audio file too small ({file_size} bytes), likely corrupted")
+
     try:
         cmd = [
             FFMPEG_PATH, "-y",
@@ -45,9 +54,13 @@ def any_audio_to_pcm16_mono_24khz(file_storage) -> bytes:
             "-hide_banner", "-loglevel", "error",
             "pipe:1",
         ]
-        out = subprocess.check_output(cmd, stderr=subprocess.PIPE)
-        print(f"✅ Audio converted successfully: {len(out)} bytes")
-        return out
+        result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        if result.returncode != 0:
+            stderr_text = result.stderr.decode('utf-8', errors='replace')
+            print(f"❌ FFmpeg error (exit {result.returncode}): {stderr_text}")
+            raise RuntimeError(f"FFmpeg conversion failed: {stderr_text}")
+        print(f"✅ Audio converted successfully: {len(result.stdout)} bytes")
+        return result.stdout
     finally:
         os.unlink(in_path)  # Clean up temp file
 
