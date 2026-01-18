@@ -40,6 +40,8 @@ export default function VideoRoom({ roomId }) {
   const [lines, setLines] = useState([]);
   const [err, setErr] = useState("");
   const [remoteTranslation, setRemoteTranslation] = useState("");
+  const [showLeaveModal, setShowLeaveModal] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
   const CHUNK_MS = 2500; // tune: 2000–4000
 
   async function sendBlob(blob) {
@@ -293,6 +295,7 @@ export default function VideoRoom({ roomId }) {
           setStatus("Call ended by peer");
           setCallActive(false);
           setCallEnded(true);
+          setIsLeaving(true);
           try {
             pcRef.current?.getSenders().forEach((sender) => {
               try { sender.track?.stop(); } catch {}  
@@ -388,6 +391,7 @@ export default function VideoRoom({ roomId }) {
     setStatus("Call ended");
     setCallActive(false);
     setCallEnded(true);
+    setIsLeaving(true);
     try {
       pcRef.current?.getSenders().forEach((sender) => {
         try { sender.track?.stop(); } catch {}
@@ -424,23 +428,34 @@ export default function VideoRoom({ roomId }) {
       return;
     }
     
-    if (window.confirm("Are you sure you want to leave the meeting?")) {
-      // Clean up
-      try {
-        pcRef.current?.getSenders().forEach((sender) => {
-          try { sender.track?.stop(); } catch {}
-        });
-        pcRef.current?.close();
-      } catch {}
-      try {
-        localStreamRef.current?.getTracks().forEach((t) => t.stop());
-      } catch {}
-      try {
-        wsRef.current?.send(JSON.stringify({ type: "end", roomId }));
-      } catch {}
-      
+    setShowLeaveModal(true);
+  };
+
+  const confirmLeave = () => {
+    setShowLeaveModal(false);
+    setIsLeaving(true);
+    
+    // Clean up
+    try {
+      pcRef.current?.getSenders().forEach((sender) => {
+        try { sender.track?.stop(); } catch {}
+      });
+      pcRef.current?.close();
+    } catch {}
+    try {
+      localStreamRef.current?.getTracks().forEach((t) => t.stop());
+    } catch {}
+    try {
+      wsRef.current?.send(JSON.stringify({ type: "end", roomId }));
+    } catch {}
+    
+    setTimeout(() => {
       navigate("/join");
-    }
+    }, 1500);
+  };
+
+  const cancelLeave = () => {
+    setShowLeaveModal(false);
   };
 
   const canStart = (!firstCallStarted && isInitiator && !callActive) || (firstCallStarted && !callActive);
@@ -762,6 +777,41 @@ export default function VideoRoom({ roomId }) {
           </div>
         </div>
       </div>
+
+      {/* Leave Confirmation Modal */}
+      {showLeaveModal && (
+        <div className="modal-overlay">
+          <div className="modal-content">
+            <div className="modal-icon">
+              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
+                <line x1="12" y1="9" x2="12" y2="13"></line>
+                <line x1="12" y1="17" x2="12.01" y2="17"></line>
+              </svg>
+            </div>
+            <h2>Leave Meeting?</h2>
+            <p>Are you sure you want to leave this meeting? This action cannot be undone.</p>
+            <div className="modal-actions">
+              <button className="modal-button cancel" onClick={cancelLeave}>
+                Stay in Meeting
+              </button>
+              <button className="modal-button confirm" onClick={confirmLeave}>
+                Leave Meeting
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Loading Overlay */}
+      {isLeaving && (
+        <div className="loading-overlay">
+          <div className="loading-content">
+            <div className="loading-spinner"></div>
+            <p>Leaving meeting...</p>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

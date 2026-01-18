@@ -194,6 +194,10 @@ h1 {
   font-size: 18px;
 }
 
+.theme-toggle-home svg {
+  color: var(--text-primary);
+}
+
 .theme-toggle-home:hover {
   background: var(--bg-secondary);
   border-color: var(--text-tertiary);
@@ -298,6 +302,10 @@ h1 {
   align-items: center;
   justify-content: center;
   font-size: 18px;
+}
+
+.theme-toggle-landing svg {
+  color: var(--text-primary);
 }
 
 .theme-toggle-landing:hover {
