@@ -1,97 +1,162 @@
-import { useCallback, useEffect, useRef } from "react";
-import { useSignaling } from "./signaling";
+import { useEffect, useRef, useState } from "react";
 
-const pcConfig = {
-  iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
+const PC_CONFIG = {
+  iceServers: [
+    { urls: "stun:stun.l.google.com:19302" },
+    // Production: add TURN here for reliability
+  ],
 };
 
 export default function VideoRoom({ roomId }) {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+
+  const wsRef = useRef(null);
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
 
-  const onSignalMessage = useCallback(async (msg) => {
-    const pc = pcRef.current;
-    if (!pc) return;
+  const [status, setStatus] = useState("Starting...");
+  const [isInitiator, setIsInitiator] = useState(false);
 
-    if (msg.type === "offer") {
-      await pc.setRemoteDescription(msg.sdp);
-      const answer = await pc.createAnswer();
-      await pc.setLocalDescription(answer);
-      send({ type: "answer", roomId, sdp: pc.localDescription });
-    }
-
-    if (msg.type === "answer") {
-      await pc.setRemoteDescription(msg.sdp);
-    }
-
-    if (msg.type === "ice") {
-      try {
-        await pc.addIceCandidate(msg.candidate);
-      } catch (e) {
-        console.warn("addIceCandidate failed", e);
-      }
-    }
-  }, [roomId]);
-
-  const { send } = useSignaling(roomId, onSignalMessage);
+  // IMPORTANT: if testing on phone/other laptop, "localhost" won't work.
+  // Use your dev machine LAN IP like ws://192.168.1.42:8080
+  const SIGNAL_URL = "ws://localhost:8080";
 
   useEffect(() => {
     let cancelled = false;
 
-    async function init() {
-      const stream = await navigator.mediaDevices.getUserMedia({
+    console.log("CLIENT joining room:", roomId);
+
+
+    async function start() {
+      setStatus("Getting camera/mic...");
+      const localStream = await navigator.mediaDevices.getUserMedia({
         video: true,
         audio: true,
       });
       if (cancelled) return;
 
-      localStreamRef.current = stream;
-      if (localVideoRef.current) localVideoRef.current.srcObject = stream;
+      localStreamRef.current = localStream;
+      localVideoRef.current.srcObject = localStream;
 
-      const pc = new RTCPeerConnection(pcConfig);
+      setStatus("Connecting to signaling...");
+      const ws = new WebSocket(SIGNAL_URL);
+      wsRef.current = ws;
+
+      // Create PeerConnection now (before messages arrive)
+      const pc = new RTCPeerConnection(PC_CONFIG);
       pcRef.current = pc;
 
+      // Send local tracks to peer
+      localStream.getTracks().forEach((t) => pc.addTrack(t, localStream));
+
+      // When remote tracks arrive, show them
       pc.ontrack = (e) => {
-        if (remoteVideoRef.current) remoteVideoRef.current.srcObject = e.streams[0];
+        remoteVideoRef.current.srcObject = e.streams[0];
       };
 
+      // Send ICE candidates to the other peer via WebSocket
       pc.onicecandidate = (e) => {
-        if (e.candidate) send({ type: "ice", roomId, candidate: e.candidate });
+        if (e.candidate) {
+          ws.send(JSON.stringify({ type: "ice", roomId, candidate: e.candidate }));
+        }
       };
 
-      stream.getTracks().forEach((t) => pc.addTrack(t, stream));
+      pc.onconnectionstatechange = () => {
+        setStatus(`WebRTC: ${pc.connectionState}`);
+      };
+
+      ws.onopen = () => {
+        ws.send(JSON.stringify({ type: "join", roomId }));
+        setStatus("Joined room. Waiting for peer...");
+      };
+
+      ws.onmessage = async (event) => {
+        const msg = JSON.parse(event.data);
+
+        if (msg.type === "joined") {
+          setIsInitiator(!!msg.isInitiator);
+          return;
+        }
+
+        const pc = pcRef.current;
+        if (!pc) return;
+
+        if (msg.type === "offer") {
+          setStatus("Received offer. Creating answer...");
+          await pc.setRemoteDescription(msg.sdp);
+          const answer = await pc.createAnswer();
+          await pc.setLocalDescription(answer);
+          ws.send(JSON.stringify({ type: "answer", roomId, sdp: pc.localDescription }));
+          return;
+        }
+
+        if (msg.type === "answer") {
+          setStatus("Received answer. Connecting...");
+          await pc.setRemoteDescription(msg.sdp);
+          return;
+        }
+
+        if (msg.type === "ice") {
+          try {
+            await pc.addIceCandidate(msg.candidate);
+          } catch (e) {
+            console.warn("ICE add failed", e);
+          }
+        }
+      };
+
+      ws.onerror = () => setStatus("WebSocket error (check server / URL)");
+      ws.onclose = () => setStatus("WebSocket closed");
     }
 
-    init();
+    start();
 
     return () => {
       cancelled = true;
-      pcRef.current?.close();
-      localStreamRef.current?.getTracks().forEach((t) => t.stop());
+      try { wsRef.current?.close(); } catch {}
+      try { pcRef.current?.close(); } catch {}
+      try { localStreamRef.current?.getTracks().forEach((t) => t.stop()); } catch {}
     };
-  }, [roomId, send]);
+  }, [roomId]);
 
+  // Only ONE side should press "Start Call" to avoid offer glare
   const startCall = async () => {
+    const ws = wsRef.current;
     const pc = pcRef.current;
-    if (!pc) return;
+    if (!ws || !pc) return;
 
+    setStatus("Creating offer...");
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
-    send({ type: "offer", roomId, sdp: pc.localDescription });
+    ws.send(JSON.stringify({ type: "offer", roomId, sdp: pc.localDescription }));
   };
 
   return (
-    <div style={{ display: "grid", gap: 12, maxWidth: 800 }}>
-      <div style={{ display: "flex", gap: 12 }}>
-        <video ref={localVideoRef} autoPlay muted playsInline style={{ width: "50%" }} />
-        <video ref={remoteVideoRef} autoPlay playsInline style={{ width: "50%" }} />
+    <div style={{ display: "grid", gap: 12, maxWidth: 900 }}>
+      <div style={{ fontSize: 14, opacity: 0.8 }}>
+        <b>Status:</b> {status} <br />
+        <b>Role:</b> {isInitiator ? "Initiator (usually press Start Call)" : "Receiver"}
       </div>
 
-      <button onClick={startCall}>Start Call</button>
+      <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>Local</div>
+          <video ref={localVideoRef} autoPlay muted playsInline style={{ width: "100%" }} />
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontSize: 12, opacity: 0.7 }}>Remote</div>
+          <video ref={remoteVideoRef} autoPlay playsInline style={{ width: "100%" }} />
+        </div>
+      </div>
+
+      <button onClick={startCall} disabled={!isInitiator}>
+        Start Call (only one side)
+      </button>
+
       <div style={{ fontSize: 12, opacity: 0.7 }}>
-        Open this same room on a second device/tab and click “Start Call” on one side.
+        Open the same roomId on a second device/tab. If the second device is not the same machine,
+        change SIGNAL_URL from localhost to your laptop’s LAN IP.
       </div>
     </div>
   );
