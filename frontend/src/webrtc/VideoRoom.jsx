@@ -23,6 +23,7 @@ export default function VideoRoom({ roomId }) {
   const [callActive, setCallActive] = useState(false);
   const [firstCallStarted, setFirstCallStarted] = useState(false);
   const [preferredLanguage, setPreferredLanguage] = useState("english");
+  const [remotePreferredLanguage, setRemotePreferredLanguage] = useState("english");
 
   const SIGNAL_URL = "ws://35.183.199.110:8080";
 
@@ -40,7 +41,7 @@ export default function VideoRoom({ roomId }) {
   async function sendBlob(blob) {
     const form = new FormData();
     form.append("audio", blob, "chunk.webm");
-    form.append("language", preferredLanguage);
+    form.append("remotePreferredLanguage", remotePreferredLanguage);
 
     const res = await fetch("http://localhost:4000/translate_if_non_english", {
       method: "POST",
@@ -54,19 +55,17 @@ export default function VideoRoom({ roomId }) {
 
   async function changePreferredLanguage(language) {
     try {
-      const res = await fetch("http://localhost:4000/change_preferred_language", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ language }),
-      });
-
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.error || "Request failed");
       setPreferredLanguage(language);
-      console.log("Preferred language changed to:", language);
-      return data;
+      try {
+        wsRef.current.send(JSON.stringify({
+          type: "preferredLanguage",
+          roomId,
+          preferredLanguage: language,
+        }));
+        console.log("Preferred language changed to:", language);
+      } catch (sendError) {
+        console.error("Failed to send preferred language:", sendError);
+      }
     } catch (error) {
       console.error("Failed to change preferred language:", error);
       throw error;
@@ -473,6 +472,12 @@ export default function VideoRoom({ roomId }) {
           console.log("Received translation from other user:", receivedTranslation);
           setRemoteTranslation(receivedTranslation);
           return;
+        }
+
+        if (msg.type === "preferredLanguage") {
+          const remoteUserPreferredLanguage = msg.preferredLanguage || "";
+          console.log("Received preferred language from other user:", remoteUserPreferredLanguage);
+          setRemotePreferredLanguage(remoteUserPreferredLanguage)
         }
       };
 
