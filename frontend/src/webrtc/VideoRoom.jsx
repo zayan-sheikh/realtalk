@@ -695,13 +695,15 @@ export default function VideoRoom({ roomId }) {
             </div>
             <span className="video-room-badge">You</span>
           </div>
-          <video ref={localVideoRef} autoPlay muted playsInline className="video-room-video" />
-          {lines.length > 0 && lines[lines.length - 1].en && (
-            <div className="video-room-translation">
-              <div className="video-room-translation-label">YOUR TRANSLATION</div>
-              <div className="translation-list">{lines[lines.length - 1].en}</div>
-            </div>
-          )}
+          <div className="video-room-video-container">
+            <video ref={localVideoRef} autoPlay muted playsInline className="video-room-video" />
+            {lines.length > 0 && lines[lines.length - 1].en && (
+              <div className="video-room-translation">
+                <div className="video-room-translation-label">YOUR TRANSLATION</div>
+                <div>{lines[lines.length - 1].en}</div>
+              </div>
+            )}
+          </div>
         </div>
 
         <div className="video-room-card">
@@ -712,13 +714,15 @@ export default function VideoRoom({ roomId }) {
             </div>
             <span className="video-room-badge">Live</span>
           </div>
-          <video ref={remoteVideoRef} autoPlay playsInline className="video-room-video" />
-          {remoteTranslation && (
-            <div className="video-room-translation">
-              <div className="video-room-translation-label">PARTNER'S TRANSLATION</div>
-              <div>{remoteTranslation}</div>
-            </div>
-          )}
+          <div className="video-room-video-container">
+            <video ref={remoteVideoRef} autoPlay playsInline className="video-room-video" />
+            {remoteTranslation && (
+              <div className="video-room-translation">
+                <div className="video-room-translation-label">PARTNER'S TRANSLATION</div>
+                <div>{remoteTranslation}</div>
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

@@ -9,6 +9,9 @@
   color: var(--text-primary);
   height: 100vh;
   overflow: hidden;
+  width: 100%;
+  position: relative;
+  -webkit-text-size-adjust: 100%;
 }
 
 .back-button {
@@ -23,6 +26,7 @@
   align-items: center;
   justify-content: center;
   color: var(--text-primary);
+  touch-action: manipulation;
 }
 
 .back-button:hover {
@@ -137,6 +141,7 @@
   align-items: center;
   justify-content: center;
   font-size: 18px;
+  touch-action: manipulation;
 }
 
 .theme-toggle svg {
@@ -167,6 +172,7 @@
   transition: all 0.15s ease;
   white-space: nowrap;
   font-family: 'Outfit', sans-serif;
+  touch-action: manipulation;
 }
 
 .copy-link-button:hover {
@@ -227,10 +233,11 @@
   overflow: hidden;
   background: var(--bg-card);
   box-shadow: var(--shadow-sm);
-  display: grid;
-  grid-template-rows: auto 1fr;
+  display: flex;
+  flex-direction: column;
   height: 100%;
   font-family: 'Outfit', sans-serif;
+  position: relative;
 }
 
 .video-room-card-header {
@@ -241,6 +248,13 @@
   border-bottom: 1px solid var(--border-color);
   background: var(--bg-secondary);
   font-family: 'Outfit', sans-serif;
+  flex-shrink: 0;
+}
+
+.video-room-video-container {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
 }
 
 .video-room-label {
@@ -271,15 +285,26 @@
   height: 100%;
   object-fit: cover;
   background: var(--bg-tertiary);
+  position: absolute;
+  top: 0;
+  left: 0;
 }
 
 .video-room-translation {
-  padding: 14px 16px 24px 16px;
-  background: var(--bg-secondary);
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  padding: 14px 16px 16px 16px;
+  background: rgba(var(--bg-secondary-rgb, 20, 20, 20), 0.95);
+  backdrop-filter: blur(8px);
   border-top: 1px solid var(--border-color);
   font-size: 13px;
   color: var(--text-primary);
   line-height: 1.5;
+  z-index: 10;
+  max-height: 40%;
+  overflow-y: auto;
 }
 
 .video-room-translation-label {
@@ -347,6 +372,7 @@
   transition: all 0.15s ease;
   white-space: nowrap;
   font-family: inherit;
+  touch-action: manipulation;
 }
 
 .video-room-button.can-start {
@@ -379,6 +405,7 @@
   transition: all 0.15s ease;
   white-space: nowrap;
   font-family: inherit;
+  touch-action: manipulation;
 }
 
 .video-room-end-button.active {
@@ -610,15 +637,40 @@
 @media (max-width: 968px) {
   .video-room-wrap {
     padding: 8px;
+    height: 100dvh; /* Use dynamic viewport height for mobile */
+  }
+  
+  .video-room-header {
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .video-room-logo-section {
+    flex-wrap: wrap;
   }
   
   .video-room-controls {
     flex-wrap: wrap;
+    padding: 12px;
+    gap: 8px;
   }
   
   .video-room-button-group {
     flex-wrap: wrap;
     justify-content: center;
+    width: 100%;
+  }
+  
+  .video-room-button,
+  .video-room-end-button {
+    flex: 1;
+    min-width: 120px;
+  }
+  
+  .video-room-translation {
+    font-size: 12px;
+    padding: 12px 14px 14px 14px;
+    max-height: 35%;
   }
 
   .modal-content {
@@ -631,5 +683,30 @@
 
   .modal-button {
     width: 100%;
+  }
+}
+
+@media (max-width: 640px) {
+  .video-room-wrap {
+    padding: 6px;
+  }
+  
+  .video-room-header {
+    padding: 10px 12px;
+  }
+  
+  .video-room-title h1 {
+    font-size: 16px;
+  }
+  
+  .video-room-pill,
+  .copy-link-button {
+    font-size: 11px;
+    padding: 4px 8px;
+  }
+  
+  .video-room-status-pill {
+    font-size: 11px;
+    padding: 4px 8px;
   }
 }
