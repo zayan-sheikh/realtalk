@@ -11,6 +11,7 @@ from websockets.asyncio.client import connect
 from openai import OpenAI
 import subprocess
 import tempfile
+import shutil
 
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 client = OpenAI()
@@ -18,14 +19,17 @@ client = OpenAI()
 REALTIME_WS_URL = "wss://api.openai.com/v1/realtime?intent=transcription"
 
 # Path to local FFmpeg binary
-FFMPEG_PATH = os.path.join(os.path.dirname(__file__), "ffmpeg-8.0.1-essentials_build", "bin", "ffmpeg.exe")
+FFMPEG_PATH = shutil.which("ffmpeg")
+if not FFMPEG_PATH:
+    raise RuntimeError(
+        "FFmpeg not found. Install ffmpeg and ensure it is on PATH."
+    )
 
 app = Flask(__name__)
 CORS(app)
 
 def any_audio_to_pcm16_mono_24khz(file_storage) -> bytes:
-    # Save upload to a temp file
-    with tempfile.NamedTemporaryFile(suffix=".input", delete=False) as f_in:
+    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f_in:
         file_storage.save(f_in.name)
         in_path = f_in.name
 
@@ -85,7 +89,7 @@ def detect_and_translate_if_needed(transcript: str) -> str:
 
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
-        input=[
+        messages=[
             {
                 "role": "system",
                 "content": (
