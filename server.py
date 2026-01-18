@@ -28,6 +28,8 @@ if not FFMPEG_PATH:
 app = Flask(__name__)
 CORS(app)
 
+language = "English"
+
 def any_audio_to_pcm16_mono_24khz(file_storage) -> bytes:
     with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f_in:
         file_storage.save(f_in.name)
@@ -93,8 +95,8 @@ def whisper_transcribe(pcm_bytes: bytes) -> str:
         os.unlink(out_path)  # Clean up temp file
 
 def detect_and_translate_if_needed(transcript: str) -> str:
-    """
-    Returns "" if English; otherwise returns English translation.
+    f"""
+    Returns "" if {language}; otherwise returns {language} translation.
     Uses a fast text model for language detection + translation.
     """
     if not transcript or not transcript.strip():
@@ -106,9 +108,9 @@ def detect_and_translate_if_needed(transcript: str) -> str:
             {
                 "role": "system",
                 "content": (
-                    "You detect whether text is English. "
-                    "If it is English, output exactly an empty string. "
-                    "If it is not English, output only the English translation (no extra words)."
+                    f"You detect whether text is {language}. "
+                    f"If it is {language}, output exactly an empty string. "
+                    f"If it is not {language}, output only the {language} translation (no extra words)."
                 ),
             },
             {"role": "user", "content": transcript},
@@ -135,7 +137,7 @@ def translate_if_non_english():
         if out:
             print(f"🌍 TRANSLATION: '{out}'")
         else:
-            print("✅ Already in English, no translation needed")
+            print(f"Already in {language}, no translation needed")
         print("="*60 + "\n")
         return jsonify(transcript=transcript, english_translation_or_empty=out)
     except Exception as e:
@@ -143,6 +145,13 @@ def translate_if_non_english():
         import traceback
         traceback.print_exc()
         return jsonify(error=str(e)), 400
+
+@app.post("/change_preferred_language")
+def change_preferred_language():
+    if "language" not in request.json:
+        return jsonify(error="Missing JSON field 'language'."), 400
+    language = request.json["language"]
+    return jsonify(message=f"Preferred language changed to {language}."), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=4000, debug=True)
