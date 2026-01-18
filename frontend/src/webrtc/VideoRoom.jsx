@@ -128,9 +128,7 @@ export default function VideoRoom({ roomId }) {
             console.error("Failed to send translation:", sendError);
           }
         } else {
-          if (!translation || translation.trim() === "") {
-            console.log("No translation to send (empty)");
-          } else if (wsRef.current?.readyState !== WebSocket.OPEN) {
+          if (wsRef.current?.readyState !== WebSocket.OPEN) {
             console.log("WebSocket not open, readyState:", wsRef.current?.readyState);
           } else if (!roomId) {
             console.log("RoomId not available");
@@ -205,15 +203,15 @@ export default function VideoRoom({ roomId }) {
         setInputVolume(volume);
         
         // Start recording if volume goes above threshold and we're not already recording
-        if (volume > 0.006 && (!mrRef.current || mrRef.current.state === "inactive")) {
+        if (volume > 0.035 && (!mrRef.current || mrRef.current.state === "inactive")) {
           console.log("Volume above threshold, starting recording");
           mrRef.current = makeRecorder(streamRef.current);
           mrRef.current.start();
         }
         
         // Stop recording if volume drops below threshold and we're currently recording
-        console.log("lastVolume", lastVolume, "volume", volume);
-        if (lastVolume > 0.006 && volume < 0.006) {
+        console.log("volume", volume);
+        if (lastVolume > 0.035 && volume < 0.015) {
           console.log("Volume dropped below threshold, stopping recording");
           if (mrRef.current && mrRef.current.state === "recording") {
             // Ensure we've recorded for at least a minimum duration
