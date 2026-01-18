@@ -14,16 +14,23 @@ import tempfile
 import shutil
 
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY")
 client = OpenAI()
 
 REALTIME_WS_URL = "wss://api.openai.com/v1/realtime?intent=transcription"
 
+# ElevenLabs voice IDs
+ELEVENLABS_VOICES = {
+    "masculine": "pNInz6obpgDQGcFmaJgB",  # Adam - deep masculine voice
+    "feminine": "21m00Tcm4TlvDq8ikWAM"     # Rachel - clear feminine voice
+}
+
 # Path to local FFmpeg binary
-FFMPEG_PATH = shutil.which("ffmpeg")
-if not FFMPEG_PATH:
-    raise RuntimeError(
-        "FFmpeg not found. Install ffmpeg and ensure it is on PATH."
-    )
+FFMPEG_PATH = os.path.join(os.path.dirname(__file__), "ffmpeg-8.0.1-essentials_build", "bin", "ffmpeg.exe")
+if not os.path.exists(FFMPEG_PATH):
+    FFMPEG_PATH = shutil.which("ffmpeg")
+    if not FFMPEG_PATH:
+        raise RuntimeError("FFmpeg not found. Install ffmpeg and ensure it is on PATH.")
 
 app = Flask(__name__)
 CORS(app)
@@ -125,6 +132,65 @@ def translate_if_non_english():
             print("✅ Already in English, no translation needed")
         print("="*60 + "\n")
         return jsonify(transcript=transcript, english_translation_or_empty=out)
+    except Exception as e:
+        print(f"ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify(error=str(e)), 400
+
+@app.post("/text_to_speech")
+def text_to_speech():
+    """Convert text to speech using ElevenLabs TTS"""
+    print("\n" + "="*60)
+    print("🔊 TEXT TO SPEECH REQUEST")
+    print("="*60)
+    
+    if not ELEVENLABS_API_KEY:
+        return jsonify(error="ElevenLabs API key not configured"), 500
+    
+    data = request.json
+    text = data.get("text")
+    voice_type = data.get("voice_type", "feminine")  # "masculine" or "feminine"
+    
+    if not text:
+        return jsonify(error="text is required"), 400
+    
+    try:
+        # Get voice ID based on preference
+        voice_id = ELEVENLABS_VOICES.get(voice_type, ELEVENLABS_VOICES["feminine"])
+        print(f"🎙️ Using {voice_type} voice: {voice_id}")
+        print(f"📤 Generating speech: '{text[:50]}...'")
+        
+        # Use ElevenLabs API directly
+        import requests
+        
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+        headers = {
+            "xi-api-key": ELEVENLABS_API_KEY,
+            "Content-Type": "application/json"
+        }
+        payload = {
+            "text": text,
+            "model_id": "eleven_multilingual_v2",
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.75
+            }
+        }
+        
+        response = requests.post(url, headers=headers, json=payload)
+        
+        if response.status_code != 200:
+            raise Exception(f"ElevenLabs API error: {response.text}")
+        
+        audio_bytes = response.content
+        print(f"✅ Generated {len(audio_bytes)} bytes of audio")
+        print("="*60 + "\n")
+        
+        # Return audio as base64
+        audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+        return jsonify(audio=audio_b64)
+        
     except Exception as e:
         print(f"ERROR: {e}")
         import traceback
