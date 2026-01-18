@@ -17,7 +17,7 @@ export default function VideoRoom({ roomId }) {
   const [callActive, setCallActive] = useState(false);
   const [firstCallStarted, setFirstCallStarted] = useState(false);
 
-  const SIGNAL_URL = "ws://localhost:8080";
+  const SIGNAL_URL = "ws://35.183.199.110:8080";
 
   useEffect(() => {
     let cancelled = false;
@@ -169,7 +169,7 @@ export default function VideoRoom({ roomId }) {
     } catch {}
   };
 
-  const canStart = (!firstCallStarted && isInitiator && !callActive) || (firstCallStarted && !isInitiator && !callActive);
+  const canStart = (!firstCallStarted && isInitiator && !callActive) || (firstCallStarted && !callActive);
 
   const wrapStyle = {
     maxWidth: 980,
