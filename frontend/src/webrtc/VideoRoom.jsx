@@ -1,11 +1,16 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useContext } from "react";
 import { encryptTranslation, decryptTranslation } from "../utils/encryption";
+import { useNavigate } from "react-router-dom";
+import { ThemeContext } from "../App";
+import "./VideoRoom.css";
 
 const PC_CONFIG = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
 
 export default function VideoRoom({ roomId }) {
+  const navigate = useNavigate();
+  const { theme, toggleTheme } = useContext(ThemeContext);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
 
@@ -23,6 +28,11 @@ export default function VideoRoom({ roomId }) {
   const [isInitiator, setIsInitiator] = useState(false);
   const [callActive, setCallActive] = useState(false);
   const [firstCallStarted, setFirstCallStarted] = useState(false);
+  const [preferredLanguage, setPreferredLanguage] = useState("english");
+  const [remotePreferredLanguage, setRemotePreferredLanguage] = useState("english");
+  const remotePreferredLanguageRef = useRef("english"); // Use ref to access latest value in closures
+  const [isEnding, setIsEnding] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const SIGNAL_URL = "ws://35.183.199.110:8080";
 
@@ -40,6 +50,10 @@ export default function VideoRoom({ roomId }) {
   async function sendBlob(blob) {
     const form = new FormData();
     form.append("audio", blob, "chunk.webm");
+    // Use ref to get the latest value (avoids closure stale value issue)
+    form.append("remotePreferredLanguage", remotePreferredLanguageRef.current);
+
+    console.log("YOOOOO MY PARTNERS PREFERRED LANGUAGE", remotePreferredLanguageRef.current);
 
     const res = await fetch("http://localhost:4000/translate_if_non_english", {
       method: "POST",
@@ -49,6 +63,25 @@ export default function VideoRoom({ roomId }) {
     const data = await res.json();
     if (!res.ok) throw new Error(data?.error || "Request failed");
     return data;
+  }
+
+  async function changePreferredLanguage(language) {
+    try {
+      setPreferredLanguage(language);
+      try {
+        wsRef.current.send(JSON.stringify({
+          type: "preferredLanguage",
+          roomId,
+          preferredLanguage: language,
+        }));
+        console.log("Preferred language changed to:", language);
+      } catch (sendError) {
+        console.error("Failed to send preferred language:", sendError);
+      }
+    } catch (error) {
+      console.error("Failed to change preferred language:", error);
+      throw error;
+    }
   }
 
   function makeRecorder(stream) {
@@ -68,7 +101,7 @@ export default function VideoRoom({ roomId }) {
       const blob = new Blob(chunksRef.current, { type: mimeType });
       chunksRef.current = [];
 
-      // If we stopped because we’re fully done, ignore final send
+      // If we stopped because we're fully done, ignore final send
       if (!isRecordingRef.current) return;
 
       // Check if blob has minimum size (at least 1KB to avoid corrupted files)
@@ -121,18 +154,6 @@ export default function VideoRoom({ roomId }) {
 
   const isRecordingRef = useRef(false);
 
-  // function startChunk() {
-  //   if (!streamRef.current) return;
-  //   mrRef.current = makeRecorder(streamRef.current);
-  //   mrRef.current.start();
-
-  //   timerRef.current = setTimeout(() => {
-  //     if (mrRef.current && mrRef.current.state !== "inactive") {
-  //       mrRef.current.stop();
-  //     }
-  //   }, CHUNK_MS);
-  // }
-
   async function startTranscriptionTranslation() {
     setErr("");
     setLines([]);
@@ -141,7 +162,6 @@ export default function VideoRoom({ roomId }) {
 
     isRecordingRef.current = true;
     setIsRecording(true);
-    // startChunk();
   }
 
   function stop() {
@@ -171,7 +191,7 @@ export default function VideoRoom({ roomId }) {
     return Math.sqrt(sumSquares / dataArray.length);
   }
 
-  function startInputVolumeMonitoring(stream) {
+  const startInputVolumeMonitoring = useCallback((stream) => {
     try {
       const audioContext = new AudioContext();
       const source = audioContext.createMediaStreamSource(stream);
@@ -215,7 +235,7 @@ export default function VideoRoom({ roomId }) {
     } catch (e) {
       console.warn("Failed to setup input volume monitoring:", e);
     }
-  }
+  }, []);
 
   function stopInputVolumeMonitoring() {
     if (animationFrameRef.current) {
@@ -467,6 +487,14 @@ export default function VideoRoom({ roomId }) {
           }
           return;
         }
+
+        if (msg.type === "preferredLanguage") {
+          const remoteUserPreferredLanguage = msg.preferredLanguage || "english";
+          console.log("Received preferred language from other user:", remoteUserPreferredLanguage);
+          setRemotePreferredLanguage(remoteUserPreferredLanguage);
+          remotePreferredLanguageRef.current = remoteUserPreferredLanguage; // Update ref for closures
+          return;
+        }
       };
 
       ws.onerror = () => setStatus("WebSocket error (check server / URL)");
@@ -489,7 +517,7 @@ export default function VideoRoom({ roomId }) {
         localStreamRef.current?.getTracks().forEach((t) => t.stop());
       } catch {}
     };
-  }, [roomId]);
+  }, [roomId, ensureActiveConnection, startInputVolumeMonitoring]);
 
   const startCall = async () => {
     const ws = wsRef.current;
@@ -526,9 +554,22 @@ export default function VideoRoom({ roomId }) {
     }
   };
 
+  const copyLink = async () => {
+    const link = `${window.location.origin}/call/${roomId}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy link:", err);
+    }
+  };
+
   const endCall = () => {
-    setStatus("Call ended");
+    setIsEnding(true);
+    setStatus("Ending call...");
     setCallActive(false);
+    
     try {
       if (pcRef.current) {
         // Don't stop the tracks, just close the connection
@@ -536,299 +577,226 @@ export default function VideoRoom({ roomId }) {
         // Don't set to null, we'll check if it's closed and recreate it
       }
     } catch {}
+    
     // Clear remote video but keep local video stream
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
     }
+    
     // Ensure local video is still showing
     if (localVideoRef.current && localStreamRef.current) {
       localVideoRef.current.srcObject = localStreamRef.current;
     }
+    
     // notify peer to end call
     try {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
         wsRef.current.send(JSON.stringify({ type: "end", roomId }));
       }
     } catch {}
+    
+    // Show loading screen briefly, then navigate back
+    setTimeout(() => {
+      // Cleanup before navigating
+      try {
+        wsRef.current?.close();
+      } catch {}
+      try {
+        pcRef.current?.close();
+      } catch {}
+      try {
+        localStreamRef.current?.getTracks().forEach((t) => t.stop());
+      } catch {}
+      stopInputVolumeMonitoring();
+      stop();
+      
+      navigate('/join');
+    }, 1500);
   };
 
   const canStart = (!firstCallStarted && isInitiator && !callActive) || (firstCallStarted && !callActive);
 
-  const wrapStyle = {
-    maxWidth: 980,
-    margin: "0 auto",
-    padding: 16,
-    display: "grid",
-    gap: 14,
-    fontFamily:
-      'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
-    color: "#0f172a",
-  };
-
-  const headerStyle = {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    padding: "14px 14px",
-    border: "1px solid rgba(15, 23, 42, 0.12)",
-    borderRadius: 14,
-    background: "rgba(255,255,255,0.75)",
-    backdropFilter: "blur(8px)",
-  };
-
-  const titleStyle = { display: "grid", gap: 4 };
-  const roomPill = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: "1px solid rgba(15, 23, 42, 0.12)",
-    background: "rgba(15, 23, 42, 0.04)",
-    fontSize: 12,
-    color: "rgba(15, 23, 42, 0.75)",
-    whiteSpace: "nowrap",
-  };
-
-  const statusPill = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: "1px solid rgba(15, 23, 42, 0.12)",
-    background: "rgba(255,255,255,0.8)",
-    fontSize: 12,
-    color: "rgba(15, 23, 42, 0.8)",
-    maxWidth: 420,
-  };
-
-  const dot = {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-    background: canStart ? "#10b981" : "#64748b",
-    flex: "0 0 auto",
-  };
-
-  const gridStyle = {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 14,
-  };
-
-  const cardStyle = {
-    border: "1px solid rgba(15, 23, 42, 0.12)",
-    borderRadius: 16,
-    overflow: "hidden",
-    background: "rgba(255,255,255,0.85)",
-    boxShadow: "0 6px 20px rgba(15, 23, 42, 0.06)",
-    display: "grid",
-    gridTemplateRows: "auto 1fr",
-    minHeight: 340,
-  };
-
-  const cardHeaderStyle = {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "10px 12px",
-    borderBottom: "1px solid rgba(15, 23, 42, 0.10)",
-    background: "rgba(15, 23, 42, 0.03)",
-  };
-
-  const labelStyle = {
-    fontSize: 12,
-    color: "rgba(15, 23, 42, 0.70)",
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-  };
-
-  const badgeStyle = {
-    fontSize: 12,
-    padding: "4px 8px",
-    borderRadius: 999,
-    border: "1px solid rgba(15, 23, 42, 0.12)",
-    background: "rgba(255,255,255,0.8)",
-    color: "rgba(15, 23, 42, 0.70)",
-  };
-
-  const videoStyle = {
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
-    background: "linear-gradient(135deg, rgba(15, 23, 42, 0.10), rgba(15, 23, 42, 0.02))",
-  };
-
-  const controlsStyle = {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    padding: 14,
-    border: "1px solid rgba(15, 23, 42, 0.12)",
-    borderRadius: 14,
-    background: "rgba(255,255,255,0.75)",
-  };
-
-  const roleTextStyle = {
-    fontSize: 13,
-    color: "rgba(15, 23, 42, 0.75)",
-    lineHeight: 1.2,
-  };
-
-  const buttonStyle = {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border: "1px solid rgba(15, 23, 42, 0.12)",
-    background: canStart ? "#0f172a" : "rgba(15, 23, 42, 0.12)",
-    color: canStart ? "white" : "rgba(15, 23, 42, 0.55)",
-    fontWeight: 600,
-    cursor: canStart ? "pointer" : "not-allowed",
-    transition: "transform 0.05s ease, opacity 0.2s ease",
-    whiteSpace: "nowrap",
-    marginRight: 8,
-  };
-
-  const endButtonStyle = {
-    ...buttonStyle,
-    background: callActive ? "#dc2626" : "rgba(15, 23, 42, 0.12)",
-    color: callActive ? "white" : "rgba(15, 23, 42, 0.55)",
-    cursor: callActive ? "pointer" : "not-allowed",
-    marginRight: 0,
-  };
-
-  const helperStyle = {
-    fontSize: 12,
-    color: "rgba(15, 23, 42, 0.65)",
-    lineHeight: 1.35,
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px dashed rgba(15, 23, 42, 0.18)",
-    background: "rgba(15, 23, 42, 0.02)",
-  };
+  // Show loading screen while ending
+  if (isEnding) {
+    return (
+      <div className="loading-overlay">
+        <div className="loading-content">
+          <div className="loading-spinner"></div>
+          <p>Ending meeting...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div style={wrapStyle}>
-      {/* Header */}
-      <div style={headerStyle}>
-        <div style={titleStyle}>
-          <div style={{ fontSize: 16, fontWeight: 700 }}>Video Room</div>
-          <div style={roomPill}>
-            <span style={{ opacity: 0.7 }}>Room</span>
-            <span style={{ fontWeight: 600 }}>{roomId}</span>
+    <div className="video-room-wrap">
+      {/* Header with Logo, Title, Status, and Theme Toggle */}
+      <div className="video-room-header">
+        <div className="video-room-logo-section">
+          <button className="back-button" onClick={() => navigate('/join')} title="Back to join page">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+          </button>
+          <div className="video-room-logo">
+            <img src="/logo.svg" alt="RealTalk Logo" onError={(e) => { e.target.style.display = 'none'; }} />
+          </div>
+          <div className="video-room-title">
+            <h1><strong>REAL</strong>TALK</h1>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div className="video-room-pill">
+                <span style={{ opacity: 0.7 }}>Room</span>
+                <span style={{ fontWeight: 600 }}>{roomId}</span>
+              </div>
+              <button 
+                className="copy-link-button" 
+                onClick={copyLink}
+                title="Copy meeting link"
+              >
+                {linkCopied ? (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                    </svg>
+                    <span>Copy Invite Link</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
 
-        <div style={statusPill} title={status}>
-          <span style={dot} />
-          <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-            {status}
-          </span>
+        <div className="video-room-header-right">
+          <div className="video-room-status-pill">
+            <span className={`video-room-dot ${canStart ? 'can-start' : 'cannot-start'}`} />
+            <span>{status}</span>
+          </div>
+          <button className="theme-toggle" onClick={toggleTheme} title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
+            {theme === 'light' ? (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+              </svg>
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <circle cx="12" cy="12" r="5"></circle>
+                <line x1="12" y1="1" x2="12" y2="3"></line>
+                <line x1="12" y1="21" x2="12" y2="23"></line>
+                <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+                <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+                <line x1="1" y1="12" x2="3" y2="12"></line>
+                <line x1="21" y1="12" x2="23" y2="12"></line>
+                <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+                <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+              </svg>
+            )}
+          </button>
         </div>
       </div>
 
       {/* Videos */}
-      <div style={gridStyle}>
-        <div style={cardStyle}>
-          <div style={cardHeaderStyle}>
-            <div style={labelStyle}>
+      <div className="video-room-grid">
+        <div className="video-room-card">
+          <div className="video-room-card-header">
+            <div className="video-room-label">
               <span style={{ width: 8, height: 8, borderRadius: 999, background: "#3b82f6" }} />
               Local
             </div>
-            <span style={badgeStyle}>Muted</span>
+            <span className="video-room-badge">You</span>
           </div>
-          <video ref={localVideoRef} autoPlay muted playsInline style={videoStyle} />
-          {lines.length > 0 && lines[lines.length - 1].en && (
-            <div style={{
-              padding: "12px",
-              background: "rgba(15, 23, 42, 0.05)",
-              borderTop: "1px solid rgba(15, 23, 42, 0.10)",
-              fontSize: 14,
-              color: "rgba(15, 23, 42, 0.85)",
-              lineHeight: 1.5,
-            }}>
-              <div style={{ fontSize: 11, color: "rgba(15, 23, 42, 0.6)", marginBottom: 4, fontWeight: 600 }}>
-                TRANSLATION
+          <div className="video-room-video-container">
+            <video ref={localVideoRef} autoPlay muted playsInline className="video-room-video" />
+            {lines.length > 0 && lines[lines.length - 1].en && (
+              <div className="video-room-translation">
+                <div className="video-room-translation-label">YOUR TRANSLATION</div>
+                <div>{lines[lines.length - 1].en}</div>
               </div>
-              <div>{lines[lines.length - 1].en}</div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
 
-        <div style={cardStyle}>
-          <div style={cardHeaderStyle}>
-            <div style={labelStyle}>
+        <div className="video-room-card">
+          <div className="video-room-card-header">
+            <div className="video-room-label">
               <span style={{ width: 8, height: 8, borderRadius: 999, background: "#a855f7" }} />
               Remote
             </div>
-            <span style={badgeStyle}>Live</span>
+            <span className="video-room-badge">Live</span>
           </div>
-          <video ref={remoteVideoRef} autoPlay playsInline style={videoStyle} />
-          {remoteTranslation && (
-            <div style={{
-              padding: "12px",
-              background: "rgba(15, 23, 42, 0.05)",
-              borderTop: "1px solid rgba(15, 23, 42, 0.10)",
-              fontSize: 14,
-              color: "rgba(15, 23, 42, 0.85)",
-              lineHeight: 1.5,
-            }}>
-              <div style={{ fontSize: 11, color: "rgba(15, 23, 42, 0.6)", marginBottom: 4, fontWeight: 600 }}>
-                TRANSLATION
+          <div className="video-room-video-container">
+            <video ref={remoteVideoRef} autoPlay playsInline className="video-room-video" />
+            {remoteTranslation && (
+              <div className="video-room-translation">
+                <div className="video-room-translation-label">PARTNER'S TRANSLATION</div>
+                <div>{remoteTranslation}</div>
               </div>
-              <div>{remoteTranslation}</div>
-            </div>
-          )}
+            )}
+          </div>
         </div>
       </div>
 
       {/* Controls */}
-      <div style={controlsStyle}>
-        <div style={roleTextStyle}>
-          <div>
-            <b>Role:</b>{" "}
-            {isInitiator ? "Initiator (usually press Start Call)" : "Receiver"}
+      <div className="video-room-bottom">
+        <div className="video-room-controls">
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1 }}>
+            <label style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 500, whiteSpace: "nowrap" }}>
+              Preferred Language:
+            </label>
+            <select
+              value={preferredLanguage}
+              onChange={(e) => changePreferredLanguage(e.target.value)}
+              style={{
+                padding: "8px 12px",
+                borderRadius: 6,
+                border: "1px solid var(--border-color)",
+                background: "var(--bg-card)",
+                color: "var(--text-primary)",
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: "pointer",
+                outline: "none",
+                fontFamily: "inherit",
+              }}
+            >
+              <option value="english">English</option>
+              <option value="hindi">Hindi</option>
+              <option value="korean">Korean</option>
+              <option value="arabic">Arabic</option>
+              <option value="french">French</option>
+              <option value="spanish">Spanish</option>
+              <option value="portuguese">Portuguese</option>
+              <option value="russian">Russian</option>
+              <option value="turkish">Turkish</option>
+              <option value="italian">Italian</option>
+              <option value="german">German</option>
+              <option value="japanese">Japanese</option>
+            </select>
           </div>
-          <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
-            Only one side should start to avoid offer glare.
+
+          <div className="video-room-button-group">
+            <button 
+              onClick={startCall} 
+              disabled={!canStart} 
+              className={`video-room-button ${canStart ? 'can-start' : 'cannot-start'}`}
+            >
+              Start Call
+            </button>
+            <button 
+              onClick={endCall} 
+              disabled={!callActive} 
+              className={`video-room-end-button ${callActive ? 'active' : 'inactive'}`}
+            >
+              End Call
+            </button>
           </div>
         </div>
-
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={startCall} disabled={!canStart} style={buttonStyle}>
-            Start Call
-          </button>
-          <button onClick={endCall} disabled={!callActive} style={endButtonStyle}>
-            End Call
-          </button>
-        </div>
-      </div>
-
-      {/* Helper */}
-      {/* <div style={helperStyle}>
-        Open the same <b>roomId</b> on a second device/tab. If the second device isn’t the same machine,
-        change <b>SIGNAL_URL</b> from <b>localhost</b> to your laptop’s LAN IP.
-      </div> */}
-
-      {/* TRANSCRIPTION + TRANSLATION */}
-      <div style={{ marginTop: 16 }}>
-        {/* {lines.map((l, i) => (
-          <div key={i} style={{ marginBottom: 8 }}>
-            <div><b>Transcript:</b> {l.transcript}</div>
-            {l.en ? <div><b>EN:</b> {l.en}</div> : null}
-          </div>
-        ))} */}
-        {/* {lines.length > 0 && (
-          <div style={{ marginBottom: 8 }}>
-            <div><b>Transcript:</b> {lines[lines.length - 1].transcript}</div>
-            {lines[lines.length - 1].en && (
-              <div><b>EN:</b> {lines[lines.length - 1].en}</div>
-            )}
-          </div>
-        )} */}
       </div>
     </div>
   );
