@@ -12,6 +12,12 @@ export default function VideoRoom({ roomId }) {
   const pcRef = useRef(null);
   const localStreamRef = useRef(null);
 
+  // INPUT VOLUME MONITORING
+  const audioContextRef = useRef(null);
+  const analyserRef = useRef(null);
+  const animationFrameRef = useRef(null);
+  const [inputVolume, setInputVolume] = useState(0);
+
   const [status, setStatus] = useState("Starting...");
   const [isInitiator, setIsInitiator] = useState(false);
   const [callActive, setCallActive] = useState(false);
@@ -63,6 +69,12 @@ export default function VideoRoom({ roomId }) {
       // If we stopped because we’re fully done, ignore final send
       if (!isRecordingRef.current) return;
 
+      // Check if blob has minimum size (at least 1KB to avoid corrupted files)
+      if (blob.size < 1024) {
+        console.warn("Blob too small, skipping send:", blob.size, "bytes");
+        return;
+      }
+
       try {
         const data = await sendBlob(blob);
         setLines((p) => [
@@ -73,7 +85,7 @@ export default function VideoRoom({ roomId }) {
         setErr(String(e.message || e));
       } finally {
         // Start the next chunk if still recording
-        if (isRecordingRef.current) startChunk();
+        // if (isRecordingRef.current) startChunk();
       }
     };
 
@@ -83,17 +95,17 @@ export default function VideoRoom({ roomId }) {
 
   const isRecordingRef = useRef(false);
 
-  function startChunk() {
-    if (!streamRef.current) return;
-    mrRef.current = makeRecorder(streamRef.current);
-    mrRef.current.start();
+  // function startChunk() {
+  //   if (!streamRef.current) return;
+  //   mrRef.current = makeRecorder(streamRef.current);
+  //   mrRef.current.start();
 
-    timerRef.current = setTimeout(() => {
-      if (mrRef.current && mrRef.current.state !== "inactive") {
-        mrRef.current.stop();
-      }
-    }, CHUNK_MS);
-  }
+  //   timerRef.current = setTimeout(() => {
+  //     if (mrRef.current && mrRef.current.state !== "inactive") {
+  //       mrRef.current.stop();
+  //     }
+  //   }, CHUNK_MS);
+  // }
 
   async function startTranscriptionTranslation() {
     setErr("");
@@ -103,7 +115,7 @@ export default function VideoRoom({ roomId }) {
 
     isRecordingRef.current = true;
     setIsRecording(true);
-    startChunk();
+    // startChunk();
   }
 
   function stop() {
@@ -118,6 +130,77 @@ export default function VideoRoom({ roomId }) {
 
     if (streamRef.current) streamRef.current.getTracks().forEach((t) => t.stop());
     streamRef.current = null;
+  }
+
+  // INPUT VOLUME MONITORING
+  function calculateRMS(analyser) {
+    const bufferLength = analyser.frequencyBinCount;
+    const dataArray = new Float32Array(bufferLength);
+    analyser.getFloatTimeDomainData(dataArray);
+
+    let sumSquares = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+      sumSquares += dataArray[i] * dataArray[i];
+    }
+    return Math.sqrt(sumSquares / dataArray.length);
+  }
+
+  function startInputVolumeMonitoring(stream) {
+    try {
+      const audioContext = new AudioContext();
+      const source = audioContext.createMediaStreamSource(stream);
+      const analyser = audioContext.createAnalyser();
+      analyser.fftSize = 2048;
+      source.connect(analyser);
+
+      audioContextRef.current = audioContext;
+      analyserRef.current = analyser;
+
+      function monitor(lastVolume = 0) {
+        if (!streamRef.current || !analyserRef.current) return;
+        
+        const volume = calculateRMS(analyserRef.current);
+        setInputVolume(volume);
+        
+        // Start recording if volume goes above threshold and we're not already recording
+        if (volume > 0.006 && (!mrRef.current || mrRef.current.state === "inactive")) {
+          console.log("Volume above threshold, starting recording");
+          mrRef.current = makeRecorder(streamRef.current);
+          mrRef.current.start();
+        }
+        
+        // Stop recording if volume drops below threshold and we're currently recording
+        console.log("lastVolume", lastVolume, "volume", volume);
+        if (lastVolume > 0.006 && volume < 0.006) {
+          console.log("Volume dropped below threshold, stopping recording");
+          if (mrRef.current && mrRef.current.state === "recording") {
+            // Ensure we've recorded for at least a minimum duration
+            setTimeout(() => {
+              if (mrRef.current && mrRef.current.state === "recording") {
+                mrRef.current.stop();
+              }
+            }, 500); // Give it at least 500ms of data
+          }
+        }
+        
+        animationFrameRef.current = setTimeout(monitor, 4000, volume);
+      }
+      monitor();
+    } catch (e) {
+      console.warn("Failed to setup input volume monitoring:", e);
+    }
+  }
+
+  function stopInputVolumeMonitoring() {
+    if (animationFrameRef.current) {
+      clearTimeout(animationFrameRef.current);
+      animationFrameRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
   }
 
 
@@ -135,6 +218,9 @@ export default function VideoRoom({ roomId }) {
 
       localStreamRef.current = localStream;
       localVideoRef.current.srcObject = localStream;
+
+      // Start monitoring input volume
+      startInputVolumeMonitoring(localStream);
 
       setStatus("Connecting to signaling...");
       const ws = new WebSocket(SIGNAL_URL);
@@ -225,6 +311,7 @@ export default function VideoRoom({ roomId }) {
 
     return () => {
       cancelled = true;
+      stopInputVolumeMonitoring();
       try {
         wsRef.current?.close();
       } catch {}

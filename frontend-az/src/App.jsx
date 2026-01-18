@@ -10,7 +10,7 @@ export default function App() {
   const [lines, setLines] = useState([]);
   const [err, setErr] = useState("");
 
-  const CHUNK_MS = 2500; // tune: 2000–4000
+  const CHUNK_MS = 4000; // tune: 2000–4000
 
   async function sendBlob(blob) {
     const form = new FormData();
