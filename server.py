@@ -218,11 +218,21 @@ def generate_tts():
     print("="*60)
     
     if not ELEVENLABS_API_KEY:
+        print("❌ ERROR: ELEVENLABS_API_KEY not set!")
         return jsonify(error="ElevenLabs API key not configured"), 500
     
+    print(f"✅ API Key present: {ELEVENLABS_API_KEY[:10]}...")
+    
     data = request.get_json()
+    if not data:
+        print("❌ ERROR: No JSON data received")
+        return jsonify(error="No JSON data received"), 400
+        
     text = data.get("text", "")
     voice_gender = data.get("voice_gender", "feminine")
+    
+    print(f"📝 Received text: '{text[:100]}...'")
+    print(f"🎤 Voice gender: {voice_gender}")
     
     if not text:
         return jsonify(error="No text provided"), 400
@@ -250,6 +260,8 @@ def generate_tts():
         
         response = requests.post(url, json=payload, headers=headers)
         
+        print(f"📡 ElevenLabs response status: {response.status_code}")
+        
         if response.status_code == 200:
             print("✅ TTS generated successfully")
             # Return audio file
@@ -259,8 +271,10 @@ def generate_tts():
                 as_attachment=False
             )
         else:
+            error_detail = response.text
             print(f"❌ ElevenLabs API error: {response.status_code}")
-            return jsonify(error=f"ElevenLabs API error: {response.text}"), response.status_code
+            print(f"❌ Error details: {error_detail}")
+            return jsonify(error=f"ElevenLabs API error: {error_detail}"), 500
             
     except Exception as e:
         print(f"ERROR: {e}")
