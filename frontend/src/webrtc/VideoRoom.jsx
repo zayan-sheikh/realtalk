@@ -659,14 +659,14 @@ export default function VideoRoom({ roomId }) {
             {l.en ? <div><b>EN:</b> {l.en}</div> : null}
           </div>
         ))} */}
-        {lines.length > 0 && (
+        {/* {lines.length > 0 && (
           <div style={{ marginBottom: 8 }}>
             <div><b>Transcript:</b> {lines[lines.length - 1].transcript}</div>
             {lines[lines.length - 1].en && (
               <div><b>EN:</b> {lines[lines.length - 1].en}</div>
             )}
           </div>
-        )}
+        )} */}
       </div>
     </div>
   );
