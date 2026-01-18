@@ -129,8 +129,7 @@ def translate_if_non_english():
         return jsonify(error="Missing form-data file field 'audio'."), 400
     
     # Get language from form data (not JSON, since we're using multipart/form-data)
-    # Default to "english" (lowercase to match frontend)
-    language = request.form.get("language", "english")
+    language = request.form.get("remotePreferredLanguage", "English")
 
     try:
         print("🔄 Converting audio...")
@@ -151,7 +150,6 @@ def translate_if_non_english():
         import traceback
         traceback.print_exc()
         return jsonify(error=str(e)), 400
-
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=4000, debug=True)
