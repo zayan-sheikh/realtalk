@@ -21,23 +21,27 @@ app = Flask(__name__)
 CORS(app)
 
 def any_audio_to_pcm16_mono_24khz(file_storage) -> bytes:
-    # Save upload to a temp file
-    with tempfile.NamedTemporaryFile(suffix=".input", delete=False) as f_in:
+    with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f_in:
         file_storage.save(f_in.name)
         in_path = f_in.name
 
-    # Convert to raw PCM s16le @ 24k mono
-    cmd = [
-        "ffmpeg", "-y",
-        "-i", in_path,
-        "-ac", "1",
-        "-ar", "24000",
-        "-f", "s16le",
-        "-hide_banner", "-loglevel", "error",
-        "pipe:1",
-    ]
-    out = subprocess.check_output(cmd)
-    return out
+    try:
+        cmd = [
+            "ffmpeg", "-y",
+            "-i", in_path,
+            "-vn",  # No video
+            "-ac", "1",  # Mono
+            "-ar", "24000",  # 24kHz sample rate
+            "-acodec", "pcm_s16le",  # PCM 16-bit
+            "-f", "s16le",
+            "-hide_banner", "-loglevel", "error",
+            "pipe:1",
+        ]
+        out = subprocess.check_output(cmd, stderr=subprocess.PIPE)
+        print("output audio: ", out)
+        return out
+    finally:
+        os.unlink(in_path)  # Clean up temp file
 
 async def realtime_transcribe(pcm_bytes: bytes) -> str:
     headers = {
@@ -59,11 +63,12 @@ async def realtime_transcribe(pcm_bytes: bytes) -> str:
                 }
             }
         }))
-
+        print("session updated")
         # Append audio (base64) then commit
         b64_audio = base64.b64encode(pcm_bytes).decode("ascii")
         await ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": b64_audio}))
         await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+        print("audio appended and committed")
 
         # Wait for completed transcription event
         while True:
@@ -79,9 +84,11 @@ def detect_and_translate_if_needed(transcript: str) -> str:
     if not transcript.strip():
         return ""
 
-    resp = client.responses.create(
+    print("detecting and translating")
+
+    resp = client.chat.completions.create(
         model="gpt-4o-mini",
-        input=[
+        messages=[
             {
                 "role": "system",
                 "content": (
@@ -93,20 +100,24 @@ def detect_and_translate_if_needed(transcript: str) -> str:
             {"role": "user", "content": transcript},
         ],
     )
-    return (resp.output_text or "").strip()
+    print("response: ", resp)
+    return (resp.choices[0].message.content or "").strip()
 
 @app.post("/translate_if_non_english")
 def translate_if_non_english():
+    print("endpoint hit")
     if "audio" not in request.files:
         return jsonify(error="Missing form-data file field 'audio'."), 400
 
     try:
+        print("processing audio")
         pcm = any_audio_to_pcm16_mono_24khz(request.files["audio"])
         transcript = asyncio.run(realtime_transcribe(pcm))
+        print("transcript: ", transcript)
         out = detect_and_translate_if_needed(transcript)
         return jsonify(transcript=transcript, english_translation_or_empty=out)
     except Exception as e:
         return jsonify(error=str(e)), 400
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=4000, debug=True)
+    app.run(host="0.0.0.0", port=5003, debug=True)

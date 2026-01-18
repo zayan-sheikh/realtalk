@@ -29,7 +29,7 @@ export default function App() {
         const form = new FormData();
         form.append("audio", blob, "mic.webm");
 
-        const res = await fetch("http://localhost:4000/translate_if_non_english", {
+        const res = await fetch("http://localhost:5003/translate_if_non_english", {
           method: "POST",
           body: form,
         });
