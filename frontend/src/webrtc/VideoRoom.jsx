@@ -93,6 +93,7 @@ export default function VideoRoom({ roomId }) {
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           ws.send(JSON.stringify({ type: "answer", roomId, sdp: pc.localDescription }));
+          setCallActive(true);
           return;
         }
 
