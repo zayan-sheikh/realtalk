@@ -23,6 +23,7 @@ export default function VideoRoom({ roomId }) {
   const [callActive, setCallActive] = useState(false);
   const [firstCallStarted, setFirstCallStarted] = useState(false);
   const [preferredLanguage, setPreferredLanguage] = useState("english");
+  const remotePreferredLanguageRef = useRef("english"); // Language the remote user wants to receive
 
   const SIGNAL_URL = "ws://35.183.199.110:8080";
 
@@ -40,7 +41,8 @@ export default function VideoRoom({ roomId }) {
   async function sendBlob(blob) {
     const form = new FormData();
     form.append("audio", blob, "chunk.webm");
-    form.append("language", preferredLanguage);
+    // Use the remote user's preferred language (what they want to receive)
+    form.append("language", remotePreferredLanguageRef.current);
 
     const res = await fetch("http://localhost:4000/translate_if_non_english", {
       method: "POST",
@@ -66,6 +68,21 @@ export default function VideoRoom({ roomId }) {
       if (!res.ok) throw new Error(data?.error || "Request failed");
       setPreferredLanguage(language);
       console.log("Preferred language changed to:", language);
+      
+      // Send the preferred language to the remote user via WebSocket
+      if (wsRef.current?.readyState === WebSocket.OPEN && roomId) {
+        try {
+          wsRef.current.send(JSON.stringify({
+            type: "preferred_language",
+            roomId,
+            language: language,
+          }));
+          console.log("Sent preferred language to remote user:", language);
+        } catch (sendError) {
+          console.error("Failed to send preferred language:", sendError);
+        }
+      }
+      
       return data;
     } catch (error) {
       console.error("Failed to change preferred language:", error);
@@ -367,6 +384,19 @@ export default function VideoRoom({ roomId }) {
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: "join", roomId }));
         setStatus("Joined room. Waiting for peer...");
+        // Send current preferred language to the remote user when connected
+        if (preferredLanguage && roomId) {
+          try {
+            ws.send(JSON.stringify({
+              type: "preferred_language",
+              roomId,
+              language: preferredLanguage,
+            }));
+            console.log("Sent preferred language to remote user on connect:", preferredLanguage);
+          } catch (sendError) {
+            console.error("Failed to send preferred language on connect:", sendError);
+          }
+        }
       };
 
       ws.onmessage = async (event) => {
@@ -465,6 +495,13 @@ export default function VideoRoom({ roomId }) {
           } catch (e) {
             console.warn("ICE add failed", e);
           }
+          return;
+        }
+
+        if (msg.type === "preferred_language") {
+          const receivedLanguage = msg.language || "english";
+          remotePreferredLanguageRef.current = receivedLanguage;
+          console.log("Received preferred language from remote user:", receivedLanguage);
           return;
         }
 
