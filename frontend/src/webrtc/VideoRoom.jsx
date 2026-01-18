@@ -14,8 +14,9 @@ export default function VideoRoom({ roomId }) {
 
   const [status, setStatus] = useState("Starting...");
   const [isInitiator, setIsInitiator] = useState(false);
+  const [callActive, setCallActive] = useState(false);
 
-  const SIGNAL_URL = "ws://localhost:8080";
+   const SIGNAL_URL = "ws://localhost:8080";
 
   useEffect(() => {
     let cancelled = false;
@@ -114,6 +115,7 @@ export default function VideoRoom({ roomId }) {
     };
   }, [roomId]);
 
+
   const startCall = async () => {
     const ws = wsRef.current;
     const pc = pcRef.current;
@@ -123,9 +125,25 @@ export default function VideoRoom({ roomId }) {
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
     ws.send(JSON.stringify({ type: "offer", roomId, sdp: pc.localDescription }));
+    setCallActive(true);
   };
 
-  const canStart = isInitiator;
+  const endCall = () => {
+    setStatus("Call ended");
+    setCallActive(false);
+    try {
+      pcRef.current?.getSenders().forEach((sender) => {
+        try { sender.track?.stop(); } catch {}
+      });
+      pcRef.current?.close();
+    } catch {}
+    try {
+      localStreamRef.current?.getTracks().forEach((t) => t.stop());
+    } catch {}
+    // Optionally, notify peer (not implemented here)
+  };
+
+  const canStart = isInitiator && !callActive;
 
   const wrapStyle = {
     maxWidth: 980,
@@ -262,6 +280,15 @@ export default function VideoRoom({ roomId }) {
     cursor: canStart ? "pointer" : "not-allowed",
     transition: "transform 0.05s ease, opacity 0.2s ease",
     whiteSpace: "nowrap",
+    marginRight: 8,
+  };
+
+  const endButtonStyle = {
+    ...buttonStyle,
+    background: callActive ? "#dc2626" : "rgba(15, 23, 42, 0.12)",
+    color: callActive ? "white" : "rgba(15, 23, 42, 0.55)",
+    cursor: callActive ? "pointer" : "not-allowed",
+    marginRight: 0,
   };
 
   const helperStyle = {
@@ -331,9 +358,14 @@ export default function VideoRoom({ roomId }) {
           </div>
         </div>
 
-        <button onClick={startCall} disabled={!canStart} style={buttonStyle}>
-          Start Call
-        </button>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={startCall} disabled={!canStart} style={buttonStyle}>
+            Start Call
+          </button>
+          <button onClick={endCall} disabled={!callActive} style={endButtonStyle}>
+            End Call
+          </button>
+        </div>
       </div>
 
       {/* Helper */}
