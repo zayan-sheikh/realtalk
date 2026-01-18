@@ -1,0 +1,4 @@
+@echo off
+REM Copy this file to start_server.bat and add your API key
+set OPENAI_API_KEY=your-openai-api-key-here
+py server.py
