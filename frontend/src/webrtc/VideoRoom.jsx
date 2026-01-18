@@ -24,6 +24,7 @@ export default function VideoRoom({ roomId }) {
   const [firstCallStarted, setFirstCallStarted] = useState(false);
   const [preferredLanguage, setPreferredLanguage] = useState("english");
   const [remotePreferredLanguage, setRemotePreferredLanguage] = useState("english");
+  const remotePreferredLanguageRef = useRef("english"); // Use ref to access latest value in closures
 
   const SIGNAL_URL = "ws://35.183.199.110:8080";
 
@@ -41,7 +42,10 @@ export default function VideoRoom({ roomId }) {
   async function sendBlob(blob) {
     const form = new FormData();
     form.append("audio", blob, "chunk.webm");
-    form.append("remotePreferredLanguage", remotePreferredLanguage);
+    // Use ref to get the latest value (avoids closure stale value issue)
+    form.append("remotePreferredLanguage", remotePreferredLanguageRef.current);
+
+    console.log("YOOOOO MY PARTNERS PREFERRED LANGUAGE", remotePreferredLanguageRef.current);
 
     const res = await fetch("http://localhost:4000/translate_if_non_english", {
       method: "POST",
@@ -475,9 +479,11 @@ export default function VideoRoom({ roomId }) {
         }
 
         if (msg.type === "preferredLanguage") {
-          const remoteUserPreferredLanguage = msg.preferredLanguage || "";
+          const remoteUserPreferredLanguage = msg.preferredLanguage || "english";
           console.log("Received preferred language from other user:", remoteUserPreferredLanguage);
-          setRemotePreferredLanguage(remoteUserPreferredLanguage)
+          setRemotePreferredLanguage(remoteUserPreferredLanguage);
+          remotePreferredLanguageRef.current = remoteUserPreferredLanguage; // Update ref for closures
+          return;
         }
       };
 
