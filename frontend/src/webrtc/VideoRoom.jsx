@@ -699,7 +699,7 @@ export default function VideoRoom({ roomId }) {
           {lines.length > 0 && lines[lines.length - 1].en && (
             <div className="video-room-translation">
               <div className="video-room-translation-label">YOUR TRANSLATION</div>
-              <div>{lines[lines.length - 1].en}</div>
+              <div className="translation-list">{lines[lines.length - 1].en}</div>
             </div>
           )}
         </div>
