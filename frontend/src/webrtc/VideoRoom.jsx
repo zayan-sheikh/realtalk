@@ -33,6 +33,7 @@ export default function VideoRoom({ roomId, voiceGender }) {
   const remotePreferredLanguageRef = useRef("english"); // Use ref to access latest value in closures
   const preferredLanguageRef = useRef("english"); // Use ref for stable access in WebSocket handlers
   const ttsEnabledRef = useRef(true); // Use ref for stable access in WebSocket handlers
+  const translateAndPlayTTSRef = useRef(null); // Ref to hold the latest translateAndPlayTTS function
   const [partnerVoiceGender, setPartnerVoiceGender] = useState("masculine"); // Default to masculine
   const [isEnding, setIsEnding] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
@@ -208,6 +209,11 @@ export default function VideoRoom({ roomId, voiceGender }) {
       await generateAndPlayTTS(englishText);
     }
   }, [generateAndPlayTTS]);
+
+  // Keep translateAndPlayTTS ref updated
+  useEffect(() => {
+    translateAndPlayTTSRef.current = translateAndPlayTTS;
+  }, [translateAndPlayTTS]);
 
   function makeRecorder(stream) {
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
@@ -613,7 +619,9 @@ export default function VideoRoom({ roomId, voiceGender }) {
           if (receivedTranslation && receivedTranslation.trim() !== "" && preferredLanguageRef.current !== "english" && ttsEnabledRef.current) {
             // Generate TTS for the translated text in the user's preferred language
             // First, translate the received English text to user's preferred language
-            translateAndPlayTTS(receivedTranslation);
+            if (translateAndPlayTTSRef.current) {
+              translateAndPlayTTSRef.current(receivedTranslation);
+            }
           }
           return;
         }
