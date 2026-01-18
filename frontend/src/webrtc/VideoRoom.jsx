@@ -15,8 +15,9 @@ export default function VideoRoom({ roomId }) {
   const [status, setStatus] = useState("Starting...");
   const [isInitiator, setIsInitiator] = useState(false);
   const [callActive, setCallActive] = useState(false);
+  const [firstCallStarted, setFirstCallStarted] = useState(false);
 
-   const SIGNAL_URL = "ws://localhost:8080";
+  const SIGNAL_URL = "ws://localhost:8080";
 
   useEffect(() => {
     let cancelled = false;
@@ -138,6 +139,11 @@ export default function VideoRoom({ roomId }) {
     const pc = pcRef.current;
     if (!ws || !pc) return;
 
+    if (!firstCallStarted) {
+      setFirstCallStarted(true);
+      setIsInitiator(true);
+    }
+
     setStatus("Creating offer...");
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -163,7 +169,7 @@ export default function VideoRoom({ roomId }) {
     } catch {}
   };
 
-  const canStart = isInitiator && !callActive;
+  const canStart = (!firstCallStarted && isInitiator && !callActive) || (firstCallStarted && !isInitiator && !callActive);
 
   const wrapStyle = {
     maxWidth: 980,
