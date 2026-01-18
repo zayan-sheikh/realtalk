@@ -15,8 +15,9 @@ export default function VideoRoom({ roomId }) {
   const [status, setStatus] = useState("Starting...");
   const [isInitiator, setIsInitiator] = useState(false);
   const [callActive, setCallActive] = useState(false);
+  const [firstCallStarted, setFirstCallStarted] = useState(false);
 
-   const SIGNAL_URL = "ws://localhost:8080";
+  const SIGNAL_URL = "ws://35.183.199.110:8080";
 
   useEffect(() => {
     let cancelled = false;
@@ -71,12 +72,29 @@ export default function VideoRoom({ roomId }) {
         const pc = pcRef.current;
         if (!pc) return;
 
+        if (msg.type === "end") {
+          setStatus("Call ended by peer");
+          setCallActive(false);
+          try {
+            pcRef.current?.getSenders().forEach((sender) => {
+              try { sender.track?.stop(); } catch {}  
+            });
+            pcRef.current?.close();
+          } catch {}
+          try {
+            localStreamRef.current?.getTracks().forEach((t) => t.stop());
+          } catch {}
+          remoteVideoRef.current.srcObject = null;
+          return;
+        }
+
         if (msg.type === "offer") {
           setStatus("Received offer. Creating answer...");
           await pc.setRemoteDescription(msg.sdp);
           const answer = await pc.createAnswer();
           await pc.setLocalDescription(answer);
           ws.send(JSON.stringify({ type: "answer", roomId, sdp: pc.localDescription }));
+          setCallActive(true);
           return;
         }
 
@@ -121,6 +139,11 @@ export default function VideoRoom({ roomId }) {
     const pc = pcRef.current;
     if (!ws || !pc) return;
 
+    if (!firstCallStarted) {
+      setFirstCallStarted(true);
+      setIsInitiator(true);
+    }
+
     setStatus("Creating offer...");
     const offer = await pc.createOffer();
     await pc.setLocalDescription(offer);
@@ -140,10 +163,13 @@ export default function VideoRoom({ roomId }) {
     try {
       localStreamRef.current?.getTracks().forEach((t) => t.stop());
     } catch {}
-    // Optionally, notify peer (not implemented here)
+    // notify peer to end call
+    try {
+      wsRef.current?.send(JSON.stringify({ type: "end", roomId }));
+    } catch {}
   };
 
-  const canStart = isInitiator && !callActive;
+  const canStart = (!firstCallStarted && isInitiator && !callActive) || (firstCallStarted && !callActive);
 
   const wrapStyle = {
     maxWidth: 980,
