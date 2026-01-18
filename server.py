@@ -16,7 +16,7 @@ import shutil
 from io import BytesIO
 
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
-ELEVENLABS_API_KEY = os.environ.get("ELEVENLABS_API_KEY", "")
+ELEVENLABS_API_KEY = os.environ["ELEVENLABS_API_KEY"]
 client = OpenAI()
 
 REALTIME_WS_URL = "wss://api.openai.com/v1/realtime?intent=transcription"
@@ -231,7 +231,7 @@ def generate_tts():
     
     try:
         print(f"🔄 Generating TTS for text: '{text[:50]}...'")
-        print(f"🎤 Using voice: {voice_gender} ({voice_id})")
+        print(f"🎤 Using voice: {voice_gender}")
         
         url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
         headers = {
