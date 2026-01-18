@@ -40,6 +40,7 @@ export default function VideoRoom({ roomId }) {
   async function sendBlob(blob) {
     const form = new FormData();
     form.append("audio", blob, "chunk.webm");
+    form.append("language", preferredLanguage);
 
     const res = await fetch("http://localhost:4000/translate_if_non_english", {
       method: "POST",

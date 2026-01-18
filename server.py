@@ -28,7 +28,7 @@ if not FFMPEG_PATH:
 app = Flask(__name__)
 CORS(app)
 
-language = "English"
+
 
 def any_audio_to_pcm16_mono_24khz(file_storage) -> bytes:
     with tempfile.NamedTemporaryFile(suffix=".webm", delete=False) as f_in:
@@ -94,13 +94,15 @@ def whisper_transcribe(pcm_bytes: bytes) -> str:
     finally:
         os.unlink(out_path)  # Clean up temp file
 
-def detect_and_translate_if_needed(transcript: str) -> str:
+def detect_and_translate_if_needed(transcript: str, language: str) -> str:
     f"""
     Returns "" if {language}; otherwise returns {language} translation.
     Uses a fast text model for language detection + translation.
     """
     if not transcript or not transcript.strip():
         return ""
+
+    print(language)
 
     resp = client.chat.completions.create(
         model="gpt-4o-mini",
@@ -125,6 +127,10 @@ def translate_if_non_english():
     print("="*60)
     if "audio" not in request.files:
         return jsonify(error="Missing form-data file field 'audio'."), 400
+    
+    if "language" not in request.json:
+        return jsonify(error="Missing JSON field 'language'."), 400
+    language = request.json["language"]
 
     try:
         print("🔄 Converting audio...")
@@ -133,7 +139,7 @@ def translate_if_non_english():
         transcript = whisper_transcribe(pcm)
         print(f"✅ FINAL TRANSCRIPT: '{transcript}'")
         print("🔄 Checking for translation...")
-        out = detect_and_translate_if_needed(transcript)
+        out = detect_and_translate_if_needed(transcript, language)
         if out:
             print(f"🌍 TRANSLATION: '{out}'")
         else:
@@ -146,12 +152,6 @@ def translate_if_non_english():
         traceback.print_exc()
         return jsonify(error=str(e)), 400
 
-@app.post("/change_preferred_language")
-def change_preferred_language():
-    if "language" not in request.json:
-        return jsonify(error="Missing JSON field 'language'."), 400
-    language = request.json["language"]
-    return jsonify(message=f"Preferred language changed to {language}."), 200
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=4000, debug=True)
