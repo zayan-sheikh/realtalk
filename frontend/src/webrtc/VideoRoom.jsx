@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
 
 const PC_CONFIG = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -225,7 +225,44 @@ export default function VideoRoom({ roomId }) {
     analyserRef.current = null;
   }
 
+  // Helper function to ensure RTCPeerConnection is active
+  const ensureActiveConnection = useCallback(() => {
+    let pc = pcRef.current;
+    const ws = wsRef.current;
+    const localStream = localStreamRef.current;
 
+    if (!ws || !localStream) return null;
+
+    // If PC is closed or doesn't exist, create a new one
+    if (!pc || pc.signalingState === "closed" || pc.connectionState === "closed") {
+      pc = new RTCPeerConnection(PC_CONFIG);
+      pcRef.current = pc;
+
+      // Re-add tracks
+      localStream.getTracks().forEach((t) => {
+        if (t.readyState === "live") {
+          pc.addTrack(t, localStream);
+        }
+      });
+
+      // Re-setup event handlers
+      pc.ontrack = (e) => {
+        remoteVideoRef.current.srcObject = e.streams[0];
+      };
+
+      pc.onicecandidate = (e) => {
+        if (e.candidate) {
+          ws.send(JSON.stringify({ type: "ice", roomId, candidate: e.candidate }));
+        }
+      };
+
+      pc.onconnectionstatechange = () => {
+        setStatus(`WebRTC: ${pc.connectionState}`);
+      };
+    }
+
+    return pc;
+  }, [roomId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -286,9 +323,6 @@ export default function VideoRoom({ roomId }) {
           return;
         }
 
-        const pc = pcRef.current;
-        if (!pc) return;
-
         if (msg.type === "end") {
           setStatus("Call ended by peer");
           setCallActive(false);
@@ -307,24 +341,45 @@ export default function VideoRoom({ roomId }) {
         }
 
         if (msg.type === "offer") {
+          // Ensure connection is active before handling offer
+          const activePc = ensureActiveConnection();
+          if (!activePc) return;
+          
           setStatus("Received offer. Creating answer...");
-          await pc.setRemoteDescription(msg.sdp);
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          ws.send(JSON.stringify({ type: "answer", roomId, sdp: pc.localDescription }));
-          setCallActive(true);
+          try {
+            await activePc.setRemoteDescription(msg.sdp);
+            const answer = await activePc.createAnswer();
+            await activePc.setLocalDescription(answer);
+            ws.send(JSON.stringify({ type: "answer", roomId, sdp: activePc.localDescription }));
+            setCallActive(true);
+          } catch (error) {
+            console.error("Failed to handle offer:", error);
+            setStatus("Failed to handle offer. Please try again.");
+          }
           return;
         }
 
         if (msg.type === "answer") {
+          // Ensure connection is active before handling answer
+          const activePc = ensureActiveConnection();
+          if (!activePc) return;
+          
           setStatus("Received answer. Connecting...");
-          await pc.setRemoteDescription(msg.sdp);
+          try {
+            await activePc.setRemoteDescription(msg.sdp);
+          } catch (error) {
+            console.error("Failed to set remote description:", error);
+            setStatus("Failed to set remote description. Please try again.");
+          }
           return;
         }
 
         if (msg.type === "ice") {
+          const activePc = ensureActiveConnection();
+          if (!activePc) return;
+          
           try {
-            await pc.addIceCandidate(msg.candidate);
+            await activePc.addIceCandidate(msg.candidate);
           } catch (e) {
             console.warn("ICE add failed", e);
           }
@@ -361,39 +416,10 @@ export default function VideoRoom({ roomId }) {
     };
   }, [roomId]);
 
-
   const startCall = async () => {
     const ws = wsRef.current;
-    let pc = pcRef.current;
-    if (!ws || !localStreamRef.current) return;
-
-    // If PC is closed or doesn't exist, create a new one
-    if (!pc || pc.signalingState === "closed" || pc.connectionState === "closed") {
-      pc = new RTCPeerConnection(PC_CONFIG);
-      pcRef.current = pc;
-
-      // Re-add tracks
-      localStreamRef.current.getTracks().forEach((t) => {
-        if (t.readyState === "live") {
-          pc.addTrack(t, localStreamRef.current);
-        }
-      });
-
-      // Re-setup event handlers
-      pc.ontrack = (e) => {
-        remoteVideoRef.current.srcObject = e.streams[0];
-      };
-
-      pc.onicecandidate = (e) => {
-        if (e.candidate) {
-          ws.send(JSON.stringify({ type: "ice", roomId, candidate: e.candidate }));
-        }
-      };
-
-      pc.onconnectionstatechange = () => {
-        setStatus(`WebRTC: ${pc.connectionState}`);
-      };
-    }
+    const pc = ensureActiveConnection();
+    if (!ws || !pc) return;
 
     if (!firstCallStarted) {
       setFirstCallStarted(true);
