@@ -233,25 +233,62 @@ export default function VideoRoom({ roomId }) {
 
     if (!ws || !localStream) return null;
 
-    // If PC is closed or doesn't exist, create a new one
-    if (!pc || pc.signalingState === "closed" || pc.connectionState === "closed") {
+    // If PC is closed, doesn't exist, or in a bad state, create a new one
+    const needsNewConnection = !pc || 
+      pc.signalingState === "closed" || 
+      pc.connectionState === "closed" ||
+      pc.connectionState === "failed" ||
+      pc.connectionState === "disconnected";
+    
+    if (needsNewConnection) {
+      // Close old connection if it exists
+      if (pc) {
+        try {
+          pc.close();
+        } catch (e) {
+          console.warn("Error closing old PC:", e);
+        }
+      }
+
       pc = new RTCPeerConnection(PC_CONFIG);
       pcRef.current = pc;
 
-      // Re-add tracks
+      // Ensure local video element has the stream
+      if (localVideoRef.current && localVideoRef.current.srcObject !== localStream) {
+        localVideoRef.current.srcObject = localStream;
+      }
+
+      // Re-add tracks - check if they're still live, if not, get new ones
+      const tracksToAdd = [];
       localStream.getTracks().forEach((t) => {
         if (t.readyState === "live") {
+          tracksToAdd.push(t);
+        }
+      });
+
+      // If tracks are not live, we need to get new media
+      if (tracksToAdd.length === 0) {
+        console.warn("Local stream tracks are not live, need to get new media");
+        return null;
+      }
+
+      tracksToAdd.forEach((t) => {
+        try {
           pc.addTrack(t, localStream);
+        } catch (e) {
+          console.warn("Error adding track:", e);
         }
       });
 
       // Re-setup event handlers
       pc.ontrack = (e) => {
-        remoteVideoRef.current.srcObject = e.streams[0];
+        if (e.streams && e.streams[0]) {
+          remoteVideoRef.current.srcObject = e.streams[0];
+        }
       };
 
       pc.onicecandidate = (e) => {
-        if (e.candidate) {
+        if (e.candidate && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "ice", roomId, candidate: e.candidate }));
         }
       };
@@ -328,29 +365,43 @@ export default function VideoRoom({ roomId }) {
           setCallActive(false);
           try {
             if (pcRef.current) {
-              pcRef.current.getSenders().forEach((sender) => {
-                try { sender.track?.stop(); } catch {}  
-              });
+              // Don't stop the tracks, just close the connection
               pcRef.current.close();
               // Don't set to null, we'll check if it's closed and recreate it
             }
           } catch {}
-          // Don't stop local stream tracks, keep them for the next call
-          remoteVideoRef.current.srcObject = null;
+          // Clear remote video but keep local video stream
+          if (remoteVideoRef.current) {
+            remoteVideoRef.current.srcObject = null;
+          }
+          // Ensure local video is still showing
+          if (localVideoRef.current && localStreamRef.current) {
+            localVideoRef.current.srcObject = localStreamRef.current;
+          }
           return;
         }
 
         if (msg.type === "offer") {
+          // Ensure local video is showing
+          if (localVideoRef.current && localStreamRef.current) {
+            localVideoRef.current.srcObject = localStreamRef.current;
+          }
+
           // Ensure connection is active before handling offer
           const activePc = ensureActiveConnection();
-          if (!activePc) return;
+          if (!activePc) {
+            setStatus("Failed to create connection. Please try again.");
+            return;
+          }
           
           setStatus("Received offer. Creating answer...");
           try {
             await activePc.setRemoteDescription(msg.sdp);
             const answer = await activePc.createAnswer();
             await activePc.setLocalDescription(answer);
-            ws.send(JSON.stringify({ type: "answer", roomId, sdp: activePc.localDescription }));
+            if (ws.readyState === WebSocket.OPEN) {
+              ws.send(JSON.stringify({ type: "answer", roomId, sdp: activePc.localDescription }));
+            }
             setCallActive(true);
           } catch (error) {
             console.error("Failed to handle offer:", error);
@@ -360,9 +411,17 @@ export default function VideoRoom({ roomId }) {
         }
 
         if (msg.type === "answer") {
+          // Ensure local video is showing
+          if (localVideoRef.current && localStreamRef.current) {
+            localVideoRef.current.srcObject = localStreamRef.current;
+          }
+
           // Ensure connection is active before handling answer
           const activePc = ensureActiveConnection();
-          if (!activePc) return;
+          if (!activePc) {
+            setStatus("Failed to create connection. Please try again.");
+            return;
+          }
           
           setStatus("Received answer. Connecting...");
           try {
@@ -418,8 +477,21 @@ export default function VideoRoom({ roomId }) {
 
   const startCall = async () => {
     const ws = wsRef.current;
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      setStatus("WebSocket not ready. Please wait...");
+      return;
+    }
+
+    // Ensure local video is showing
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
+
     const pc = ensureActiveConnection();
-    if (!ws || !pc) return;
+    if (!pc) {
+      setStatus("Failed to create connection. Please try again.");
+      return;
+    }
 
     if (!firstCallStarted) {
       setFirstCallStarted(true);
@@ -443,19 +515,25 @@ export default function VideoRoom({ roomId }) {
     setCallActive(false);
     try {
       if (pcRef.current) {
-        pcRef.current.getSenders().forEach((sender) => {
-          try { sender.track?.stop(); } catch {}
-        });
+        // Don't stop the tracks, just close the connection
         pcRef.current.close();
         // Don't set to null, we'll check if it's closed and recreate it
       }
     } catch {}
-    // Don't stop local stream tracks, keep them for the next call
+    // Clear remote video but keep local video stream
+    if (remoteVideoRef.current) {
+      remoteVideoRef.current.srcObject = null;
+    }
+    // Ensure local video is still showing
+    if (localVideoRef.current && localStreamRef.current) {
+      localVideoRef.current.srcObject = localStreamRef.current;
+    }
     // notify peer to end call
     try {
-      wsRef.current?.send(JSON.stringify({ type: "end", roomId }));
+      if (wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.send(JSON.stringify({ type: "end", roomId }));
+      }
     } catch {}
-    remoteVideoRef.current.srcObject = null;
   };
 
   const canStart = (!firstCallStarted && isInitiator && !callActive) || (firstCallStarted && !callActive);
