@@ -13,6 +13,7 @@ export default function VideoRoom({ roomId, voiceGender }) {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const ttsAudioRef = useRef(null); // For TTS playback
+  const ttsAudioContextRef = useRef(null); // For unlocking audio playback
 
   const wsRef = useRef(null);
   const pcRef = useRef(null);
@@ -137,6 +138,7 @@ export default function VideoRoom({ roomId, voiceGender }) {
       if (ttsAudioRef.current) {
         try {
           ttsAudioRef.current.pause();
+          ttsAudioRef.current.currentTime = 0;
           ttsAudioRef.current.src = "";
         } catch (e) {
           console.warn("Error cleaning up old audio:", e);
@@ -149,7 +151,6 @@ export default function VideoRoom({ roomId, voiceGender }) {
       
       audio.src = audioUrl;
       audio.volume = 1.0;
-      audio.preload = "auto";
 
       console.log("🎵 Audio element created and src set");
 
@@ -159,7 +160,7 @@ export default function VideoRoom({ roomId, voiceGender }) {
           remoteVideoRef.current.volume = 1.0;
         }
         setIsTTSPlaying(false);
-        URL.revokeObjectURL(audioUrl);
+        setTimeout(() => URL.revokeObjectURL(audioUrl), 100); // Delay revoke slightly
       };
 
       audio.onended = () => {
@@ -177,23 +178,28 @@ export default function VideoRoom({ roomId, voiceGender }) {
         console.log("📻 Audio loaded, duration:", audio.duration, "seconds");
       };
 
-      // Play with error handling
+      // Play immediately - the audio context was unlocked when user clicked "Start Call"
       try {
         console.log("▶️ Attempting to play audio...");
+        
+        // Play returns a promise
         const playPromise = audio.play();
         
         if (playPromise !== undefined) {
-          await playPromise;
-          console.log("🔊 Audio playing successfully");
+          playPromise.then(() => {
+            console.log("🔊 Audio playing successfully");
+          }).catch((playError) => {
+            console.error("Play failed:", playError);
+            if (playError.name === 'NotAllowedError') {
+              console.error("⚠️ Autoplay blocked by browser.");
+              // Don't show alert - just silently fail since user already clicked Start Call
+            }
+            cleanup();
+          });
         }
       } catch (playError) {
-        console.error("Play failed:", playError);
-        // Browser might have blocked autoplay
-        if (playError.name === 'NotAllowedError') {
-          console.error("⚠️ Autoplay blocked by browser. User interaction required.");
-        }
+        console.error("Play error:", playError);
         cleanup();
-        throw playError;
       }
 
     } catch (error) {
@@ -684,6 +690,19 @@ export default function VideoRoom({ roomId, voiceGender }) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       setStatus("WebSocket not ready. Please wait...");
       return;
+    }
+
+    // Unlock audio context on user interaction (for autoplay policy)
+    try {
+      if (!ttsAudioContextRef.current) {
+        ttsAudioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (ttsAudioContextRef.current.state === 'suspended') {
+        await ttsAudioContextRef.current.resume();
+        console.log("🔓 Audio context unlocked for TTS");
+      }
+    } catch (e) {
+      console.warn("Failed to unlock audio context:", e);
     }
 
     // Ensure local video is showing
