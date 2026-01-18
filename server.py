@@ -9,13 +9,31 @@ import threading
 
 from flask import Flask, request, jsonify
 from flask_cors import CORS
-from websockets.asyncio.client import connect
+import sys
+
+# Force unbuffered output so prints appear immediately
+sys.stdout.reconfigure(line_buffering=True) if hasattr(sys.stdout, 'reconfigure') else None
+
+try:
+    from websockets.asyncio.client import connect
+    print("✅ Successfully imported websockets")
+except ImportError as e:
+    print(f"❌ Failed to import websockets: {e}")
+    print("Install with: pip install websockets>=12.0")
+    raise
+
 from openai import OpenAI
 import subprocess
 import tempfile
 import shutil
 
-OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+try:
+    OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+    print(f"✅ OPENAI_API_KEY found (length: {len(OPENAI_API_KEY)})")
+except KeyError:
+    print("❌ OPENAI_API_KEY environment variable not set!")
+    raise RuntimeError("OPENAI_API_KEY environment variable is required")
+
 client = OpenAI()
 
 REALTIME_WS_URL = "wss://api.openai.com/v1/realtime?intent=transcription"
@@ -78,40 +96,68 @@ async def realtime_transcribe_async(pcm_bytes: bytes) -> str:
     }
     
     transcript_complete = asyncio.Event()
+    session_ready = asyncio.Event()
     transcript_text = ""
     transcript_error = None
     
     async def receive_messages(ws):
-        nonlocal transcript_text, transcript_error
+        nonlocal transcript_text, transcript_error, session_ready
         try:
             async for message in ws:
-                event = json.loads(message)
-                event_type = event.get("type")
-                
-                if event_type == "conversation.item.input_audio_transcription.completed":
-                    transcript_text = event.get("transcript", "").strip()
-                    print(f"✅ Realtime API TRANSCRIPT: {transcript_text}")
-                    transcript_complete.set()
-                    break
-                elif event_type == "conversation.item.input_audio_transcription.delta":
-                    # Accumulate delta updates if needed (optional)
-                    delta = event.get("delta", "")
-                    if delta:
-                        transcript_text += delta
-                elif event_type == "error":
-                    transcript_error = event.get("error", {}).get("message", "Unknown error")
-                    print(f"❌ Realtime API error: {transcript_error}")
-                    transcript_complete.set()
-                    break
+                try:
+                    event = json.loads(message)
+                    event_type = event.get("type")
+                    
+                    print(f"📨 Realtime API event: {event_type}")
+                    
+                    if event_type == "session.updated":
+                        print("✅ Session updated successfully")
+                        session_ready.set()
+                    elif event_type == "conversation.item.input_audio_transcription.completed":
+                        transcript_text = event.get("transcript", "").strip()
+                        print(f"✅ Realtime API TRANSCRIPT: {transcript_text}")
+                        transcript_complete.set()
+                        break
+                    elif event_type == "conversation.item.input_audio_transcription.delta":
+                        # Accumulate delta updates if needed (optional)
+                        delta = event.get("delta", "")
+                        if delta:
+                            transcript_text += delta
+                            print(f"📝 Delta: {delta}")
+                    elif event_type == "error":
+                        error_info = event.get("error", {})
+                        transcript_error = error_info.get("message", error_info.get("type", "Unknown error"))
+                        print(f"❌ Realtime API error: {transcript_error}")
+                        transcript_complete.set()
+                        break
+                    elif event_type == "input_audio_buffer.speech_started":
+                        print("🎤 Speech started")
+                    elif event_type == "input_audio_buffer.speech_stopped":
+                        print("🔇 Speech stopped")
+                    elif event_type == "input_audio_buffer.committed":
+                        print("✅ Audio buffer committed")
+                except json.JSONDecodeError as e:
+                    print(f"❌ Failed to parse message: {e}, message: {message[:200]}")
+                except Exception as e:
+                    print(f"❌ Error processing message: {e}")
         except Exception as e:
             transcript_error = str(e)
             print(f"❌ Error receiving messages: {e}")
+            import traceback
+            traceback.print_exc()
             transcript_complete.set()
+            session_ready.set()  # Unblock if waiting
     
     try:
-        async with connect(REALTIME_WS_URL, extra_headers=headers) as ws:
+        # Use additional_headers instead of extra_headers for websockets asyncio client
+        async with connect(REALTIME_WS_URL, additional_headers=list(headers.items())) as ws:
+            print("✅ WebSocket connected")
+            
+            # Start receiving messages immediately
+            receive_task = asyncio.create_task(receive_messages(ws))
+            
             # Configure session for transcription
-            await ws.send(json.dumps({
+            session_config = {
                 "type": "session.update",
                 "session": {
                     "type": "transcription",
@@ -133,16 +179,24 @@ async def realtime_transcribe_async(pcm_bytes: bytes) -> str:
                         }
                     }
                 }
-            }))
+            }
             
-            # Start receiving messages
-            receive_task = asyncio.create_task(receive_messages(ws))
+            print("📤 Sending session update...")
+            await ws.send(json.dumps(session_config))
+            
+            # Wait for session to be ready (with timeout)
+            try:
+                await asyncio.wait_for(session_ready.wait(), timeout=5.0)
+            except asyncio.TimeoutError:
+                print("⚠️ Session update timeout, proceeding anyway...")
             
             # Send audio in chunks (PCM16 is 2 bytes per sample, so chunk size should be multiple of 2)
             # Send in ~100ms chunks (2400 samples at 24kHz = 4800 bytes)
             chunk_size = 4800  # 100ms of audio at 24kHz PCM16
             total_bytes = len(pcm_bytes)
             sent_bytes = 0
+            
+            print(f"📤 Sending {total_bytes} bytes of audio in chunks...")
             
             while sent_bytes < total_bytes:
                 chunk_end = min(sent_bytes + chunk_size, total_bytes)
@@ -164,6 +218,7 @@ async def realtime_transcribe_async(pcm_bytes: bytes) -> str:
                     await asyncio.sleep(0.01)
             
             # Commit the audio buffer to trigger transcription
+            print("📤 Committing audio buffer...")
             await ws.send(json.dumps({
                 "type": "input_audio_buffer.commit"
             }))
@@ -190,9 +245,16 @@ async def realtime_transcribe_async(pcm_bytes: bytes) -> str:
             
             return transcript_text if transcript_text else ""
             
+    except ImportError as e:
+        raise RuntimeError(
+            f"Missing dependency: {e}. Install with: pip install websockets>=12.0"
+        ) from e
     except Exception as e:
-        print(f"❌ Realtime API connection error: {e}")
-        raise
+        error_msg = f"Realtime API connection error: {e}"
+        print(f"❌ {error_msg}")
+        import traceback
+        traceback.print_exc()
+        raise RuntimeError(error_msg) from e
 
 def realtime_transcribe(pcm_bytes: bytes) -> str:
     """Wrapper to run async Realtime API transcription in sync context"""
@@ -288,6 +350,7 @@ def translate_if_non_english():
     try:
         print("🔄 Converting audio...")
         pcm = any_audio_to_pcm16_mono_24khz(request.files["audio"])
+        print(f"✅ Audio converted: {len(pcm)} bytes")
         print("🔄 Transcribing with Realtime API...")
         transcript = realtime_transcribe(pcm)
         print(f"✅ FINAL TRANSCRIPT: '{transcript}'")
@@ -299,11 +362,28 @@ def translate_if_non_english():
             print(f"Already in {language}, no translation needed")
         print("="*60 + "\n")
         return jsonify(transcript=transcript, english_translation_or_empty=out)
-    except Exception as e:
-        print(f"ERROR: {e}")
+    except ImportError as e:
+        error_msg = f"Missing dependency: {e}. Install with: pip install websockets>=12.0"
+        print(f"ERROR: {error_msg}")
+        return jsonify(error=error_msg), 400
+    except RuntimeError as e:
+        error_msg = str(e)
+        print(f"ERROR: {error_msg}")
         import traceback
         traceback.print_exc()
-        return jsonify(error=str(e)), 400
+        return jsonify(error=error_msg), 400
+    except Exception as e:
+        error_msg = f"Transcription failed: {str(e)}"
+        print(f"ERROR: {error_msg}")
+        import traceback
+        traceback.print_exc()
+        return jsonify(error=error_msg), 400
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=4000, debug=True)
+    print("\n" + "="*60)
+    print("🚀 Starting Flask server...")
+    print(f"📍 Server will run on http://0.0.0.0:4000")
+    print(f"🔑 API Key loaded: {'Yes' if OPENAI_API_KEY else 'No'}")
+    print(f"🎬 FFmpeg path: {FFMPEG_PATH}")
+    print("="*60 + "\n")
+    app.run(host="0.0.0.0", port=4000, debug=True, use_reloader=False)
