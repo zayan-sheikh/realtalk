@@ -31,6 +31,8 @@ export default function VideoRoom({ roomId, voiceGender }) {
   const [preferredLanguage, setPreferredLanguage] = useState("english");
   const [remotePreferredLanguage, setRemotePreferredLanguage] = useState("english");
   const remotePreferredLanguageRef = useRef("english"); // Use ref to access latest value in closures
+  const preferredLanguageRef = useRef("english"); // Use ref for stable access in WebSocket handlers
+  const ttsEnabledRef = useRef(true); // Use ref for stable access in WebSocket handlers
   const [partnerVoiceGender, setPartnerVoiceGender] = useState("masculine"); // Default to masculine
   const [isEnding, setIsEnding] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
@@ -49,6 +51,15 @@ export default function VideoRoom({ roomId, voiceGender }) {
   const [isTTSPlaying, setIsTTSPlaying] = useState(false);
   const [ttsEnabled, setTTSEnabled] = useState(true); // Toggle for TTS
   const CHUNK_MS = 2500; // tune: 2000–4000
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    ttsEnabledRef.current = ttsEnabled;
+  }, [ttsEnabled]);
+
+  useEffect(() => {
+    preferredLanguageRef.current = preferredLanguage;
+  }, [preferredLanguage]);
 
   async function sendBlob(blob) {
     const form = new FormData();
@@ -71,6 +82,7 @@ export default function VideoRoom({ roomId, voiceGender }) {
   async function changePreferredLanguage(language) {
     try {
       setPreferredLanguage(language);
+      preferredLanguageRef.current = language; // Update ref
       try {
         wsRef.current.send(JSON.stringify({
           type: "preferredLanguage",
@@ -164,7 +176,8 @@ export default function VideoRoom({ roomId, voiceGender }) {
   // Translate text to user's preferred language and play TTS
   const translateAndPlayTTS = useCallback(async (englishText) => {
     try {
-      console.log("🌍 Translating to", preferredLanguage, ":", englishText);
+      const currentLanguage = preferredLanguageRef.current;
+      console.log("🌍 Translating to", currentLanguage, ":", englishText);
       
       // Translate English text to user's preferred language using backend
       const translateResponse = await fetch("http://localhost:4000/translate_text", {
@@ -174,7 +187,7 @@ export default function VideoRoom({ roomId, voiceGender }) {
         },
         body: JSON.stringify({
           text: englishText,
-          target_language: preferredLanguage,
+          target_language: currentLanguage,
         }),
       });
 
@@ -194,7 +207,7 @@ export default function VideoRoom({ roomId, voiceGender }) {
       // Fallback to playing TTS with English text
       await generateAndPlayTTS(englishText);
     }
-  }, [preferredLanguage, generateAndPlayTTS]);
+  }, [generateAndPlayTTS]);
 
   function makeRecorder(stream) {
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
@@ -597,7 +610,7 @@ export default function VideoRoom({ roomId, voiceGender }) {
           
           // If the translation exists and we have a preferred language that's not English,
           // and TTS is enabled, generate and play TTS
-          if (receivedTranslation && receivedTranslation.trim() !== "" && preferredLanguage !== "english" && ttsEnabled) {
+          if (receivedTranslation && receivedTranslation.trim() !== "" && preferredLanguageRef.current !== "english" && ttsEnabledRef.current) {
             // Generate TTS for the translated text in the user's preferred language
             // First, translate the received English text to user's preferred language
             translateAndPlayTTS(receivedTranslation);
@@ -641,7 +654,9 @@ export default function VideoRoom({ roomId, voiceGender }) {
         localStreamRef.current?.getTracks().forEach((t) => t.stop());
       } catch {}
     };
-  }, [roomId, ensureActiveConnection, startInputVolumeMonitoring, translateAndPlayTTS, preferredLanguage, ttsEnabled, voiceGender]);
+    // translateAndPlayTTS is intentionally not in deps - it uses refs to avoid recreating connection
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, ensureActiveConnection, startInputVolumeMonitoring, voiceGender]);
 
   const startCall = async () => {
     const ws = wsRef.current;
@@ -924,8 +939,8 @@ export default function VideoRoom({ roomId, voiceGender }) {
               style={{
                 padding: "8px 16px",
                 borderRadius: 6,
-                border: ttsEnabled ? "2px solid var(--accent-color)" : "1px solid var(--border-color)",
-                background: ttsEnabled ? "rgba(59, 130, 246, 0.1)" : "var(--bg-card)",
+                border: ttsEnabled ? "2px solid var(--accent-primary)" : "1px solid var(--border-color)",
+                background: ttsEnabled ? "var(--accent-light)" : "var(--bg-card)",
                 color: "var(--text-primary)",
                 fontSize: 13,
                 fontWeight: 500,
