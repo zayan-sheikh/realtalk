@@ -53,15 +53,53 @@ export default function VideoRoom({ roomId }) {
     form.append("remotePreferredLanguage", remotePreferredLanguageRef.current);
 
     console.log("YOOOOO MY PARTNERS PREFERRED LANGUAGE", remotePreferredLanguageRef.current);
-
-    const res = await fetch("http://localhost:4000/translate_if_non_english", {
-      method: "POST",
-      body: form,
+    console.log("📤 Sending audio blob:", {
+      size: blob.size,
+      type: blob.type,
+      language: remotePreferredLanguageRef.current
     });
 
-    const data = await res.json();
-    if (!res.ok) throw new Error(data?.error || "Request failed");
-    return data;
+    try {
+      const res = await fetch("http://localhost:4000/translate_if_non_english", {
+        method: "POST",
+        body: form,
+      });
+
+      console.log("📥 Response received:", {
+        status: res.status,
+        statusText: res.statusText,
+        ok: res.ok,
+        headers: Object.fromEntries(res.headers.entries()),
+      });
+
+      // Try to get response text first to see what we're getting
+      const responseText = await res.text();
+      console.log("📄 Raw response text:", responseText);
+
+      let data;
+      try {
+        data = JSON.parse(responseText);
+        console.log("✅ Parsed JSON response:", data);
+      } catch (parseError) {
+        console.error("❌ Failed to parse JSON:", parseError);
+        console.error("Response was:", responseText);
+        throw new Error(`Invalid JSON response: ${responseText.substring(0, 200)}`);
+      }
+
+      if (!res.ok) {
+        console.error("❌ Request failed:", {
+          status: res.status,
+          error: data?.error || "Unknown error",
+          fullResponse: data
+        });
+        throw new Error(data?.error || `Request failed with status ${res.status}`);
+      }
+
+      return data;
+    } catch (error) {
+      console.error("❌ Error in sendBlob:", error);
+      throw error;
+    }
   }
 
   async function changePreferredLanguage(language) {
