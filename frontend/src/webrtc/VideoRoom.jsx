@@ -22,6 +22,7 @@ export default function VideoRoom({ roomId }) {
   const [isInitiator, setIsInitiator] = useState(false);
   const [callActive, setCallActive] = useState(false);
   const [firstCallStarted, setFirstCallStarted] = useState(false);
+  const [preferredLanguage, setPreferredLanguage] = useState("english");
 
   const SIGNAL_URL = "ws://35.183.199.110:8080";
 
@@ -48,6 +49,27 @@ export default function VideoRoom({ roomId }) {
     const data = await res.json();
     if (!res.ok) throw new Error(data?.error || "Request failed");
     return data;
+  }
+
+  async function changePreferredLanguage(language) {
+    try {
+      const res = await fetch("http://localhost:4000/change_preferred_language", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ language }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data?.error || "Request failed");
+      setPreferredLanguage(language);
+      console.log("Preferred language changed to:", language);
+      return data;
+    } catch (error) {
+      console.error("Failed to change preferred language:", error);
+      throw error;
+    }
   }
 
   function makeRecorder(stream) {
@@ -694,6 +716,27 @@ export default function VideoRoom({ roomId }) {
     background: "rgba(15, 23, 42, 0.02)",
   };
 
+  const selectStyle = {
+    padding: "8px 12px",
+    borderRadius: 8,
+    border: "1px solid rgba(15, 23, 42, 0.12)",
+    background: "rgba(255,255,255,0.9)",
+    color: "rgba(15, 23, 42, 0.85)",
+    fontSize: 13,
+    fontWeight: 500,
+    cursor: "pointer",
+    outline: "none",
+    transition: "border-color 0.2s ease",
+  };
+
+  const selectLabelStyle = {
+    fontSize: 12,
+    color: "rgba(15, 23, 42, 0.70)",
+    marginRight: 8,
+    display: "flex",
+    alignItems: "center",
+  };
+
   return (
     <div style={wrapStyle}>
       {/* Header */}
@@ -771,13 +814,36 @@ export default function VideoRoom({ roomId }) {
 
       {/* Controls */}
       <div style={controlsStyle}>
-        <div style={roleTextStyle}>
-          <div>
-            <b>Role:</b>{" "}
-            {isInitiator ? "Initiator (usually press Start Call)" : "Receiver"}
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <div style={roleTextStyle}>
+            <div>
+              <b>Role:</b>{" "}
+              {isInitiator ? "Initiator (usually press Start Call)" : "Receiver"}
+            </div>
+            <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
+              Only one side should start to avoid offer glare.
+            </div>
           </div>
-          <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
-            Only one side should start to avoid offer glare.
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <label style={selectLabelStyle}>
+              <b>Preferred Language:</b>
+            </label>
+            <select
+              value={preferredLanguage}
+              onChange={(e) => changePreferredLanguage(e.target.value)}
+              style={selectStyle}
+              onMouseEnter={(e) => {
+                e.target.style.borderColor = "rgba(15, 23, 42, 0.3)";
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.borderColor = "rgba(15, 23, 42, 0.12)";
+              }}
+            >
+              <option value="english">English</option>
+              <option value="hindi">Hindi</option>
+              <option value="korean">Korean</option>
+              <option value="arabic">Arabic</option>
+            </select>
           </div>
         </div>
 
