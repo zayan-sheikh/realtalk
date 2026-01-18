@@ -1,4 +1,7 @@
-import { useEffect, useRef, useState, useCallback } from "react";
+import { useEffect, useRef, useState, useCallback, useContext } from "react";
+import { useNavigate } from "react-router-dom";
+import { ThemeContext } from "../App";
+import "./VideoRoom.css";
 
 const PC_CONFIG = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
@@ -6,6 +9,7 @@ const PC_CONFIG = {
 
 export default function VideoRoom({ roomId }) {
   const navigate = useNavigate();
+  const { theme, toggleTheme } = useContext(ThemeContext);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
 
@@ -26,6 +30,8 @@ export default function VideoRoom({ roomId }) {
   const [preferredLanguage, setPreferredLanguage] = useState("english");
   const [remotePreferredLanguage, setRemotePreferredLanguage] = useState("english");
   const remotePreferredLanguageRef = useRef("english"); // Use ref to access latest value in closures
+  const [isEnding, setIsEnding] = useState(false);
+  const [linkCopied, setLinkCopied] = useState(false);
 
   const SIGNAL_URL = "ws://35.183.199.110:8080";
 
@@ -38,8 +44,6 @@ export default function VideoRoom({ roomId }) {
   const [lines, setLines] = useState([]);
   const [err, setErr] = useState("");
   const [remoteTranslation, setRemoteTranslation] = useState("");
-  const [showLeaveModal, setShowLeaveModal] = useState(false);
-  const [isLeaving, setIsLeaving] = useState(false);
   const CHUNK_MS = 2500; // tune: 2000–4000
 
   async function sendBlob(blob) {
@@ -96,7 +100,7 @@ export default function VideoRoom({ roomId }) {
       const blob = new Blob(chunksRef.current, { type: mimeType });
       chunksRef.current = [];
 
-      // If we stopped because we’re fully done, ignore final send
+      // If we stopped because we're fully done, ignore final send
       if (!isRecordingRef.current) return;
 
       // Check if blob has minimum size (at least 1KB to avoid corrupted files)
@@ -146,18 +150,6 @@ export default function VideoRoom({ roomId }) {
 
   const isRecordingRef = useRef(false);
 
-  // function startChunk() {
-  //   if (!streamRef.current) return;
-  //   mrRef.current = makeRecorder(streamRef.current);
-  //   mrRef.current.start();
-
-  //   timerRef.current = setTimeout(() => {
-  //     if (mrRef.current && mrRef.current.state !== "inactive") {
-  //       mrRef.current.stop();
-  //     }
-  //   }, CHUNK_MS);
-  // }
-
   async function startTranscriptionTranslation() {
     setErr("");
     setLines([]);
@@ -166,7 +158,6 @@ export default function VideoRoom({ roomId }) {
 
     isRecordingRef.current = true;
     setIsRecording(true);
-    // startChunk();
   }
 
   function stop() {
@@ -196,7 +187,7 @@ export default function VideoRoom({ roomId }) {
     return Math.sqrt(sumSquares / dataArray.length);
   }
 
-  function startInputVolumeMonitoring(stream) {
+  const startInputVolumeMonitoring = useCallback((stream) => {
     try {
       const audioContext = new AudioContext();
       const source = audioContext.createMediaStreamSource(stream);
@@ -240,7 +231,7 @@ export default function VideoRoom({ roomId }) {
     } catch (e) {
       console.warn("Failed to setup input volume monitoring:", e);
     }
-  }
+  }, []);
 
   function stopInputVolumeMonitoring() {
     if (animationFrameRef.current) {
@@ -373,19 +364,6 @@ export default function VideoRoom({ roomId }) {
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: "join", roomId }));
         setStatus("Joined room. Waiting for peer...");
-        // Send current preferred language to the remote user when connected
-        if (preferredLanguage && roomId) {
-          try {
-            ws.send(JSON.stringify({
-              type: "preferred_language",
-              roomId,
-              language: preferredLanguage,
-            }));
-            console.log("Sent preferred language to remote user on connect:", preferredLanguage);
-          } catch (sendError) {
-            console.error("Failed to send preferred language on connect:", sendError);
-          }
-        }
       };
 
       ws.onmessage = async (event) => {
@@ -405,8 +383,6 @@ export default function VideoRoom({ roomId }) {
         if (msg.type === "end") {
           setStatus("Call ended by peer");
           setCallActive(false);
-          setCallEnded(true);
-          setIsLeaving(true);
           try {
             if (pcRef.current) {
               // Don't stop the tracks, just close the connection
@@ -489,13 +465,6 @@ export default function VideoRoom({ roomId }) {
           return;
         }
 
-        if (msg.type === "preferred_language") {
-          const receivedLanguage = msg.language || "english";
-          remotePreferredLanguageRef.current = receivedLanguage;
-          console.log("Received preferred language from remote user:", receivedLanguage);
-          return;
-        }
-
         if (msg.type === "translation") {
           const receivedTranslation = msg.translation || "";
           console.log("Received translation from other user:", receivedTranslation);
@@ -532,7 +501,7 @@ export default function VideoRoom({ roomId }) {
         localStreamRef.current?.getTracks().forEach((t) => t.stop());
       } catch {}
     };
-  }, [roomId]);
+  }, [roomId, ensureActiveConnection, startInputVolumeMonitoring]);
 
   const startCall = async () => {
     const ws = wsRef.current;
@@ -569,11 +538,22 @@ export default function VideoRoom({ roomId }) {
     }
   };
 
+  const copyLink = async () => {
+    const link = `${window.location.origin}/call/${roomId}`;
+    try {
+      await navigator.clipboard.writeText(link);
+      setLinkCopied(true);
+      setTimeout(() => setLinkCopied(false), 2000);
+    } catch (err) {
+      console.error("Failed to copy link:", err);
+    }
+  };
+
   const endCall = () => {
-    setStatus("Call ended");
+    setIsEnding(true);
+    setStatus("Ending call...");
     setCallActive(false);
-    setCallEnded(true);
-    setIsLeaving(true);
+    
     try {
       if (pcRef.current) {
         // Don't stop the tracks, just close the connection
@@ -581,14 +561,17 @@ export default function VideoRoom({ roomId }) {
         // Don't set to null, we'll check if it's closed and recreate it
       }
     } catch {}
+    
     // Clear remote video but keep local video stream
     if (remoteVideoRef.current) {
       remoteVideoRef.current.srcObject = null;
     }
+    
     // Ensure local video is still showing
     if (localVideoRef.current && localStreamRef.current) {
       localVideoRef.current.srcObject = localStreamRef.current;
     }
+    
     // notify peer to end call
     try {
       if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -596,269 +579,90 @@ export default function VideoRoom({ roomId }) {
       }
     } catch {}
     
-    // Auto-redirect after 2 seconds
+    // Show loading screen briefly, then navigate back
     setTimeout(() => {
-      navigate("/join");
-    }, 2000);
-  };
-
-  const toggleMute = () => {
-    if (localStreamRef.current) {
-      const audioTrack = localStreamRef.current.getAudioTracks()[0];
-      if (audioTrack) {
-        audioTrack.enabled = !audioTrack.enabled;
-        setIsMuted(!audioTrack.enabled);
-      }
-    }
-  };
-
-  const handleBack = () => {
-    if (callEnded) {
-      navigate("/join");
-      return;
-    }
-    
-    setShowLeaveModal(true);
-  };
-
-  const confirmLeave = () => {
-    setShowLeaveModal(false);
-    setIsLeaving(true);
-    
-    // Clean up
-    try {
-      pcRef.current?.getSenders().forEach((sender) => {
-        try { sender.track?.stop(); } catch {}
-      });
-      pcRef.current?.close();
-    } catch {}
-    try {
-      localStreamRef.current?.getTracks().forEach((t) => t.stop());
-    } catch {}
-    try {
-      wsRef.current?.send(JSON.stringify({ type: "end", roomId }));
-    } catch {}
-    
-    setTimeout(() => {
-      navigate("/join");
+      // Cleanup before navigating
+      try {
+        wsRef.current?.close();
+      } catch {}
+      try {
+        pcRef.current?.close();
+      } catch {}
+      try {
+        localStreamRef.current?.getTracks().forEach((t) => t.stop());
+      } catch {}
+      stopInputVolumeMonitoring();
+      stop();
+      
+      navigate('/join');
     }, 1500);
   };
 
-  const cancelLeave = () => {
-    setShowLeaveModal(false);
-  };
-
   const canStart = (!firstCallStarted && isInitiator && !callActive) || (firstCallStarted && !callActive);
-  const { theme, toggleTheme } = useContext(ThemeContext);
 
-  const wrapStyle = {
-    maxWidth: 980,
-    margin: "0 auto",
-    padding: 16,
-    display: "grid",
-    gap: 14,
-    fontFamily:
-      'ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji", "Segoe UI Emoji"',
-    color: "#0f172a",
-  };
-
-  const headerStyle = {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    padding: "14px 14px",
-    border: "1px solid rgba(15, 23, 42, 0.12)",
-    borderRadius: 14,
-    background: "rgba(255,255,255,0.75)",
-    backdropFilter: "blur(8px)",
-  };
-
-  const titleStyle = { display: "grid", gap: 4 };
-  const roomPill = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: "1px solid rgba(15, 23, 42, 0.12)",
-    background: "rgba(15, 23, 42, 0.04)",
-    fontSize: 12,
-    color: "rgba(15, 23, 42, 0.75)",
-    whiteSpace: "nowrap",
-  };
-
-  const statusPill = {
-    display: "inline-flex",
-    alignItems: "center",
-    gap: 8,
-    padding: "6px 10px",
-    borderRadius: 999,
-    border: "1px solid rgba(15, 23, 42, 0.12)",
-    background: "rgba(255,255,255,0.8)",
-    fontSize: 12,
-    color: "rgba(15, 23, 42, 0.8)",
-    maxWidth: 420,
-  };
-
-  const dot = {
-    width: 8,
-    height: 8,
-    borderRadius: 999,
-    background: canStart ? "#10b981" : "#64748b",
-    flex: "0 0 auto",
-  };
-
-  const gridStyle = {
-    display: "grid",
-    gridTemplateColumns: "1fr 1fr",
-    gap: 14,
-  };
-
-  const cardStyle = {
-    border: "1px solid rgba(15, 23, 42, 0.12)",
-    borderRadius: 16,
-    overflow: "hidden",
-    background: "rgba(255,255,255,0.85)",
-    boxShadow: "0 6px 20px rgba(15, 23, 42, 0.06)",
-    display: "grid",
-    gridTemplateRows: "auto 1fr",
-    minHeight: 340,
-  };
-
-  const cardHeaderStyle = {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "10px 12px",
-    borderBottom: "1px solid rgba(15, 23, 42, 0.10)",
-    background: "rgba(15, 23, 42, 0.03)",
-  };
-
-  const labelStyle = {
-    fontSize: 12,
-    color: "rgba(15, 23, 42, 0.70)",
-    display: "flex",
-    alignItems: "center",
-    gap: 8,
-  };
-
-  const badgeStyle = {
-    fontSize: 12,
-    padding: "4px 8px",
-    borderRadius: 999,
-    border: "1px solid rgba(15, 23, 42, 0.12)",
-    background: "rgba(255,255,255,0.8)",
-    color: "rgba(15, 23, 42, 0.70)",
-  };
-
-  const videoStyle = {
-    width: "100%",
-    height: "100%",
-    objectFit: "cover",
-    background: "linear-gradient(135deg, rgba(15, 23, 42, 0.10), rgba(15, 23, 42, 0.02))",
-  };
-
-  const controlsStyle = {
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    gap: 12,
-    padding: 14,
-    border: "1px solid rgba(15, 23, 42, 0.12)",
-    borderRadius: 14,
-    background: "rgba(255,255,255,0.75)",
-  };
-
-  const roleTextStyle = {
-    fontSize: 13,
-    color: "rgba(15, 23, 42, 0.75)",
-    lineHeight: 1.2,
-  };
-
-  const buttonStyle = {
-    padding: "10px 14px",
-    borderRadius: 12,
-    border: "1px solid rgba(15, 23, 42, 0.12)",
-    background: canStart ? "#0f172a" : "rgba(15, 23, 42, 0.12)",
-    color: canStart ? "white" : "rgba(15, 23, 42, 0.55)",
-    fontWeight: 600,
-    cursor: canStart ? "pointer" : "not-allowed",
-    transition: "transform 0.05s ease, opacity 0.2s ease",
-    whiteSpace: "nowrap",
-    marginRight: 8,
-  };
-
-  const endButtonStyle = {
-    ...buttonStyle,
-    background: callActive ? "#dc2626" : "rgba(15, 23, 42, 0.12)",
-    color: callActive ? "white" : "rgba(15, 23, 42, 0.55)",
-    cursor: callActive ? "pointer" : "not-allowed",
-    marginRight: 0,
-  };
-
-  const helperStyle = {
-    fontSize: 12,
-    color: "rgba(15, 23, 42, 0.65)",
-    lineHeight: 1.35,
-    padding: "10px 12px",
-    borderRadius: 12,
-    border: "1px dashed rgba(15, 23, 42, 0.18)",
-    background: "rgba(15, 23, 42, 0.02)",
-  };
-
-  const selectStyle = {
-    padding: "8px 12px",
-    borderRadius: 8,
-    border: "1px solid rgba(15, 23, 42, 0.12)",
-    background: "rgba(255,255,255,0.9)",
-    color: "rgba(15, 23, 42, 0.85)",
-    fontSize: 13,
-    fontWeight: 500,
-    cursor: "pointer",
-    outline: "none",
-    transition: "border-color 0.2s ease",
-  };
-
-  const selectLabelStyle = {
-    fontSize: 12,
-    color: "rgba(15, 23, 42, 0.70)",
-    marginRight: 8,
-    display: "flex",
-    alignItems: "center",
-  };
+  // Show loading screen while ending
+  if (isEnding) {
+    return (
+      <div className="loading-overlay">
+        <div className="loading-content">
+          <div className="loading-spinner"></div>
+          <p>Ending meeting...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="video-room-wrap">
-      {/* Header */}
+      {/* Header with Logo, Title, Status, and Theme Toggle */}
       <div className="video-room-header">
-        <button className="back-button" onClick={handleBack} title="Leave meeting">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-            <path d="M19 12H5M12 19l-7-7 7-7"/>
-          </svg>
-        </button>
-        
         <div className="video-room-logo-section">
+          <button className="back-button" onClick={() => navigate('/join')} title="Back to join page">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+          </button>
           <div className="video-room-logo">
-            <img src="/logo.svg" alt="Logo" onError={(e) => { e.target.style.display = 'none'; e.target.parentNode.textContent = 'RT'; }} />
+            <img src="/logo.svg" alt="RealTalk Logo" onError={(e) => { e.target.style.display = 'none'; }} />
           </div>
           <div className="video-room-title">
             <h1><strong>REAL</strong>TALK</h1>
-            <div className="video-room-pill">
-              <span style={{ opacity: 0.7 }}>Room</span>
-              <span style={{ fontWeight: 600 }}>{roomId}</span>
+            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+              <div className="video-room-pill">
+                <span style={{ opacity: 0.7 }}>Room</span>
+                <span style={{ fontWeight: 600 }}>{roomId}</span>
+              </div>
+              <button 
+                className="copy-link-button" 
+                onClick={copyLink}
+                title="Copy meeting link"
+              >
+                {linkCopied ? (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <polyline points="20 6 9 17 4 12"></polyline>
+                    </svg>
+                    <span>Copied!</span>
+                  </>
+                ) : (
+                  <>
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                      <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path>
+                      <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path>
+                    </svg>
+                    <span>Copy Invite Link</span>
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
 
         <div className="video-room-header-right">
-          <div className="video-room-status-pill" title={status}>
+          <div className="video-room-status-pill">
             <span className={`video-room-dot ${canStart ? 'can-start' : 'cannot-start'}`} />
-            <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-              {status}
-            </span>
+            <span>{status}</span>
           </div>
-          
           <button className="theme-toggle" onClick={toggleTheme} title={`Switch to ${theme === 'light' ? 'dark' : 'light'} mode`}>
             {theme === 'light' ? (
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -886,17 +690,15 @@ export default function VideoRoom({ roomId }) {
         <div className="video-room-card">
           <div className="video-room-card-header">
             <div className="video-room-label">
-              <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-primary)' }} />
-              You
+              <span style={{ width: 8, height: 8, borderRadius: 999, background: "#3b82f6" }} />
+              Local
             </div>
-            {isMuted && <span className="video-room-badge">Muted</span>}
+            <span className="video-room-badge">You</span>
           </div>
           <video ref={localVideoRef} autoPlay muted playsInline className="video-room-video" />
           {lines.length > 0 && lines[lines.length - 1].en && (
             <div className="video-room-translation">
-              <div className="video-room-translation-label">
-                TRANSLATION
-              </div>
+              <div className="video-room-translation-label">YOUR TRANSLATION</div>
               <div>{lines[lines.length - 1].en}</div>
             </div>
           )}
@@ -905,16 +707,15 @@ export default function VideoRoom({ roomId }) {
         <div className="video-room-card">
           <div className="video-room-card-header">
             <div className="video-room-label">
-              <span style={{ width: 10, height: 10, borderRadius: '50%', background: 'var(--accent-secondary)' }} />
+              <span style={{ width: 8, height: 8, borderRadius: 999, background: "#a855f7" }} />
               Remote
             </div>
+            <span className="video-room-badge">Live</span>
           </div>
           <video ref={remoteVideoRef} autoPlay playsInline className="video-room-video" />
           {remoteTranslation && (
             <div className="video-room-translation">
-              <div className="video-room-translation-label">
-                TRANSLATION
-              </div>
+              <div className="video-room-translation-label">PARTNER'S TRANSLATION</div>
               <div>{remoteTranslation}</div>
             </div>
           )}
@@ -922,30 +723,26 @@ export default function VideoRoom({ roomId }) {
       </div>
 
       {/* Controls */}
-      <div style={controlsStyle}>
-        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-          <div style={roleTextStyle}>
-            <div>
-              <b>Role:</b>{" "}
-              {isInitiator ? "Initiator (usually press Start Call)" : "Receiver"}
-            </div>
-            <div style={{ marginTop: 4, fontSize: 12, opacity: 0.75 }}>
-              Only one side should start to avoid offer glare.
-            </div>
-          </div>
-          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <label style={selectLabelStyle}>
-              <b>Preferred Language:</b>
+      <div className="video-room-bottom">
+        <div className="video-room-controls">
+          <div style={{ display: "flex", alignItems: "center", gap: 12, flex: 1 }}>
+            <label style={{ fontSize: 13, color: "var(--text-secondary)", fontWeight: 500, whiteSpace: "nowrap" }}>
+              Preferred Language:
             </label>
             <select
               value={preferredLanguage}
               onChange={(e) => changePreferredLanguage(e.target.value)}
-              style={selectStyle}
-              onMouseEnter={(e) => {
-                e.target.style.borderColor = "rgba(15, 23, 42, 0.3)";
-              }}
-              onMouseLeave={(e) => {
-                e.target.style.borderColor = "rgba(15, 23, 42, 0.12)";
+              style={{
+                padding: "8px 12px",
+                borderRadius: 6,
+                border: "1px solid var(--border-color)",
+                background: "var(--bg-card)",
+                color: "var(--text-primary)",
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: "pointer",
+                outline: "none",
+                fontFamily: "inherit",
               }}
             >
               <option value="english">English</option>
@@ -960,83 +757,27 @@ export default function VideoRoom({ roomId }) {
               <option value="italian">Italian</option>
               <option value="german">German</option>
               <option value="japanese">Japanese</option>
-              <option value="korean">Korean</option>
             </select>
           </div>
-        </div>
 
-        <div style={{ display: "flex", gap: 8 }}>
-          <button onClick={startCall} disabled={!canStart} style={buttonStyle}>
-            Start Call
-          </button>
-          <button 
-            onClick={endCall} 
-            disabled={!callActive} 
-            className={`video-room-end-button ${callActive ? 'active' : 'inactive'}`}
-          >
-            End Call
-          </button>
+          <div className="video-room-button-group">
+            <button 
+              onClick={startCall} 
+              disabled={!canStart} 
+              className={`video-room-button ${canStart ? 'can-start' : 'cannot-start'}`}
+            >
+              Start Call
+            </button>
+            <button 
+              onClick={endCall} 
+              disabled={!callActive} 
+              className={`video-room-end-button ${callActive ? 'active' : 'inactive'}`}
+            >
+              End Call
+            </button>
+          </div>
         </div>
       </div>
-
-      {/* Helper */}
-      {/* <div style={helperStyle}>
-        Open the same <b>roomId</b> on a second device/tab. If the second device isn’t the same machine,
-        change <b>SIGNAL_URL</b> from <b>localhost</b> to your laptop’s LAN IP.
-      </div> */}
-
-      {/* TRANSCRIPTION + TRANSLATION */}
-      <div style={{ marginTop: 16 }}>
-        {/* {lines.map((l, i) => (
-          <div key={i} style={{ marginBottom: 8 }}>
-            <div><b>Transcript:</b> {l.transcript}</div>
-            {l.en ? <div><b>EN:</b> {l.en}</div> : null}
-          </div>
-        ))} */}
-        {/* {lines.length > 0 && (
-          <div style={{ marginBottom: 8 }}>
-            <div><b>Transcript:</b> {lines[lines.length - 1].transcript}</div>
-            {lines[lines.length - 1].en && (
-              <div><b>EN:</b> {lines[lines.length - 1].en}</div>
-            )}
-          </div>
-        )} */}
-      </div>
-
-      {/* Leave Confirmation Modal */}
-      {showLeaveModal && (
-        <div className="modal-overlay">
-          <div className="modal-content">
-            <div className="modal-icon">
-              <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path>
-                <line x1="12" y1="9" x2="12" y2="13"></line>
-                <line x1="12" y1="17" x2="12.01" y2="17"></line>
-              </svg>
-            </div>
-            <h2>Leave Meeting?</h2>
-            <p>Are you sure you want to leave this meeting? This action cannot be undone.</p>
-            <div className="modal-actions">
-              <button className="modal-button cancel" onClick={cancelLeave}>
-                Stay in Meeting
-              </button>
-              <button className="modal-button confirm" onClick={confirmLeave}>
-                Leave Meeting
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
-      {/* Loading Overlay */}
-      {isLeaving && (
-        <div className="loading-overlay">
-          <div className="loading-content">
-            <div className="loading-spinner"></div>
-            <p>Leaving meeting...</p>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

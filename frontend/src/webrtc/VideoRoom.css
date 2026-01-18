@@ -152,6 +152,36 @@
   transform: scale(0.95);
 }
 
+.copy-link-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 6px;
+  border: 1px solid var(--border-color);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  font-family: 'Outfit', sans-serif;
+}
+
+.copy-link-button:hover {
+  background: var(--bg-secondary);
+  border-color: var(--text-tertiary);
+}
+
+.copy-link-button:active {
+  transform: scale(0.98);
+}
+
+.copy-link-button svg {
+  flex-shrink: 0;
+}
+
 .video-room-dot {
   width: 8px;
   height: 8px;
