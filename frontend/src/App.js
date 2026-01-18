@@ -243,7 +243,7 @@ function JoinPage() {
               marginBottom: '8px', 
               display: 'block' 
             }}>
-              Your voice type (what your partner hears)
+              Partner's voice type (for TTS)
             </label>
             <div style={{ display: 'flex', gap: '12px' }}>
               <button
