@@ -4,16 +4,19 @@ import json
 import base64
 import asyncio
 import wave
+import requests
 
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, send_file
 from flask_cors import CORS
 from websockets.asyncio.client import connect
 from openai import OpenAI
 import subprocess
 import tempfile
 import shutil
+from io import BytesIO
 
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+ELEVENLABS_API_KEY = os.environ["ELEVENLABS_API_KEY"]
 client = OpenAI()
 
 REALTIME_WS_URL = "wss://api.openai.com/v1/realtime?intent=transcription"
@@ -145,6 +148,134 @@ def translate_if_non_english():
             print(f"Already in {language}, no translation needed")
         print("="*60 + "\n")
         return jsonify(transcript=transcript, english_translation_or_empty=out)
+    except Exception as e:
+        print(f"ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify(error=str(e)), 400
+
+# ElevenLabs voice IDs
+VOICE_IDS = {
+    "feminine": "21m00Tcm4TlvDq8ikWAM",  # Rachel - default feminine voice
+    "masculine": "pNInz6obpgDQGcFmaJgB"  # Adam - default masculine voice
+}
+
+@app.post("/translate_text")
+def translate_text():
+    """
+    Translate text to a target language using OpenAI
+    Request JSON:
+    {
+        "text": "text to translate",
+        "target_language": "spanish"
+    }
+    """
+    data = request.get_json()
+    text = data.get("text", "")
+    target_language = data.get("target_language", "english")
+    
+    if not text:
+        return jsonify(error="No text provided"), 400
+    
+    try:
+        print(f"🌍 Translating to {target_language}: '{text[:50]}...'")
+        
+        resp = client.chat.completions.create(
+            model="gpt-4o-mini",
+            messages=[
+                {
+                    "role": "system",
+                    "content": f"Translate the following text to {target_language}. Output only the translation, no extra words.",
+                },
+                {
+                    "role": "user",
+                    "content": text,
+                },
+            ],
+        )
+        translated = (resp.choices[0].message.content or "").strip()
+        print(f"✅ Translation: '{translated}'")
+        return jsonify(translated_text=translated)
+    except Exception as e:
+        print(f"ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify(error=str(e)), 400
+
+@app.post("/generate_tts")
+def generate_tts():
+    """
+    Generate TTS audio using ElevenLabs API
+    Request JSON:
+    {
+        "text": "text to convert to speech",
+        "voice_gender": "feminine" or "masculine",
+        "language": "english" (optional, defaults to english)
+    }
+    """
+    print("\n" + "="*60)
+    print("🔊 NEW TTS REQUEST")
+    print("="*60)
+    
+    if not ELEVENLABS_API_KEY:
+        print("❌ ERROR: ELEVENLABS_API_KEY not set!")
+        return jsonify(error="ElevenLabs API key not configured"), 500
+    
+    print(f"✅ API Key present: {ELEVENLABS_API_KEY[:10]}...")
+    
+    data = request.get_json()
+    if not data:
+        print("❌ ERROR: No JSON data received")
+        return jsonify(error="No JSON data received"), 400
+        
+    text = data.get("text", "")
+    voice_gender = data.get("voice_gender", "feminine")
+    
+    print(f"📝 Received text: '{text[:100]}...'")
+    print(f"🎤 Voice gender: {voice_gender}")
+    
+    if not text:
+        return jsonify(error="No text provided"), 400
+    
+    voice_id = VOICE_IDS.get(voice_gender, VOICE_IDS["feminine"])
+    
+    try:
+        print(f"🔄 Generating TTS for text: '{text[:50]}...'")
+        print(f"🎤 Using voice: {voice_gender}")
+        
+        url = f"https://api.elevenlabs.io/v1/text-to-speech/{voice_id}"
+        headers = {
+            "Accept": "audio/mpeg",
+            "Content-Type": "application/json",
+            "xi-api-key": ELEVENLABS_API_KEY
+        }
+        payload = {
+            "text": text,
+            "model_id": "eleven_multilingual_v2",
+            "voice_settings": {
+                "stability": 0.5,
+                "similarity_boost": 0.75
+            }
+        }
+        
+        response = requests.post(url, json=payload, headers=headers)
+        
+        print(f"📡 ElevenLabs response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            print("✅ TTS generated successfully")
+            # Return audio file
+            return send_file(
+                BytesIO(response.content),
+                mimetype="audio/mpeg",
+                as_attachment=False
+            )
+        else:
+            error_detail = response.text
+            print(f"❌ ElevenLabs API error: {response.status_code}")
+            print(f"❌ Error details: {error_detail}")
+            return jsonify(error=f"ElevenLabs API error: {error_detail}"), 500
+            
     except Exception as e:
         print(f"ERROR: {e}")
         import traceback

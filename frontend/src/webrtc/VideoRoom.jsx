@@ -7,11 +7,13 @@ const PC_CONFIG = {
   iceServers: [{ urls: "stun:stun.l.google.com:19302" }],
 };
 
-export default function VideoRoom({ roomId }) {
+export default function VideoRoom({ roomId, voiceGender }) {
   const navigate = useNavigate();
   const { theme, toggleTheme } = useContext(ThemeContext);
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
+  const ttsAudioRef = useRef(null); // For TTS playback
+  const ttsAudioContextRef = useRef(null); // For unlocking audio playback
 
   const wsRef = useRef(null);
   const pcRef = useRef(null);
@@ -30,6 +32,9 @@ export default function VideoRoom({ roomId }) {
   const [preferredLanguage, setPreferredLanguage] = useState("english");
   const [remotePreferredLanguage, setRemotePreferredLanguage] = useState("english");
   const remotePreferredLanguageRef = useRef("english"); // Use ref to access latest value in closures
+  const preferredLanguageRef = useRef("english"); // Use ref for stable access in WebSocket handlers
+  const ttsEnabledRef = useRef(true); // Use ref for stable access in WebSocket handlers
+  const translateAndPlayTTSRef = useRef(null); // Ref to hold the latest translateAndPlayTTS function
   const [isEnding, setIsEnding] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
 
@@ -44,7 +49,18 @@ export default function VideoRoom({ roomId }) {
   const [lines, setLines] = useState([]);
   const [err, setErr] = useState("");
   const [remoteTranslation, setRemoteTranslation] = useState("");
+  const [isTTSPlaying, setIsTTSPlaying] = useState(false);
+  const [ttsEnabled, setTTSEnabled] = useState(true); // Toggle for TTS
   const CHUNK_MS = 2500; // tune: 2000–4000
+
+  // Keep refs in sync with state
+  useEffect(() => {
+    ttsEnabledRef.current = ttsEnabled;
+  }, [ttsEnabled]);
+
+  useEffect(() => {
+    preferredLanguageRef.current = preferredLanguage;
+  }, [preferredLanguage]);
 
   async function sendBlob(blob) {
     const form = new FormData();
@@ -67,6 +83,7 @@ export default function VideoRoom({ roomId }) {
   async function changePreferredLanguage(language) {
     try {
       setPreferredLanguage(language);
+      preferredLanguageRef.current = language; // Update ref
       try {
         wsRef.current.send(JSON.stringify({
           type: "preferredLanguage",
@@ -82,6 +99,159 @@ export default function VideoRoom({ roomId }) {
       throw error;
     }
   }
+
+  // TTS Generation and Playback
+  const generateAndPlayTTS = useCallback(async (text) => {
+    try {
+      console.log("🔊 Generating TTS for:", text);
+      console.log("🎤 Using selected voice:", voiceGender);
+      setIsTTSPlaying(true);
+
+      // Lower remote video volume
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.volume = 0.15; // Lower to 15%
+      }
+
+      // Generate TTS using partner's voice preference
+      const response = await fetch("http://localhost:4000/generate_tts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: text,
+          voice_gender: voiceGender, // Use locally selected voice
+        }),
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({ error: response.statusText }));
+        throw new Error(`TTS generation failed: ${errorData.error || response.statusText}`);
+      }
+
+      const audioBlob = await response.blob();
+      console.log("📦 Audio blob received:", audioBlob.size, "bytes, type:", audioBlob.type);
+      
+      const audioUrl = URL.createObjectURL(audioBlob);
+
+      // Stop and clean up any existing audio
+      if (ttsAudioRef.current) {
+        try {
+          ttsAudioRef.current.pause();
+          ttsAudioRef.current.currentTime = 0;
+          ttsAudioRef.current.src = "";
+        } catch (e) {
+          console.warn("Error cleaning up old audio:", e);
+        }
+      }
+
+      // Create fresh audio element
+      const audio = new Audio();
+      ttsAudioRef.current = audio;
+      
+      audio.src = audioUrl;
+      audio.volume = 1.0;
+
+      console.log("🎵 Audio element created and src set");
+
+      // Setup event handlers before playing
+      const cleanup = () => {
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.volume = 1.0;
+        }
+        setIsTTSPlaying(false);
+        setTimeout(() => URL.revokeObjectURL(audioUrl), 100); // Delay revoke slightly
+      };
+
+      audio.onended = () => {
+        console.log("✅ TTS playback completed");
+        cleanup();
+      };
+
+      audio.onerror = (e) => {
+        console.error("TTS playback error:", e);
+        console.error("Audio element error code:", audio.error?.code, audio.error?.message);
+        cleanup();
+      };
+
+      audio.onloadeddata = () => {
+        console.log("📻 Audio loaded, duration:", audio.duration, "seconds");
+      };
+
+      // Play immediately - the audio context was unlocked when user clicked "Start Call"
+      try {
+        console.log("▶️ Attempting to play audio...");
+        
+        // Play returns a promise
+        const playPromise = audio.play();
+        
+        if (playPromise !== undefined) {
+          playPromise.then(() => {
+            console.log("🔊 Audio playing successfully");
+          }).catch((playError) => {
+            console.error("Play failed:", playError);
+            if (playError.name === 'NotAllowedError') {
+              console.error("⚠️ Autoplay blocked by browser.");
+              // Don't show alert - just silently fail since user already clicked Start Call
+            }
+            cleanup();
+          });
+        }
+      } catch (playError) {
+        console.error("Play error:", playError);
+        cleanup();
+      }
+
+    } catch (error) {
+      console.error("Failed to generate/play TTS:", error);
+      // Restore remote video volume on error
+      if (remoteVideoRef.current) {
+        remoteVideoRef.current.volume = 1.0;
+      }
+      setIsTTSPlaying(false);
+    }
+  }, [voiceGender]);
+
+  // Translate text to user's preferred language and play TTS
+  const translateAndPlayTTS = useCallback(async (englishText) => {
+    try {
+      const currentLanguage = preferredLanguageRef.current;
+      console.log("🌍 Translating to", currentLanguage, ":", englishText);
+      
+      // Translate English text to user's preferred language using backend
+      const translateResponse = await fetch("http://localhost:4000/translate_text", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          text: englishText,
+          target_language: currentLanguage,
+        }),
+      });
+
+      if (!translateResponse.ok) {
+        throw new Error(`Translation failed: ${translateResponse.statusText}`);
+      }
+
+      const translateData = await translateResponse.json();
+      const translatedText = translateData.translated_text || englishText;
+      console.log("✅ Translated text:", translatedText);
+
+      // Now generate and play TTS for the translated text
+      await generateAndPlayTTS(translatedText);
+
+    } catch (error) {
+      console.error("Failed to translate:", error);
+      // Fallback to playing TTS with English text
+      await generateAndPlayTTS(englishText);
+    }
+  }, [generateAndPlayTTS]);
+
+  // Keep translateAndPlayTTS ref updated
+  useEffect(() => {
+    translateAndPlayTTSRef.current = translateAndPlayTTS;
+  }, [translateAndPlayTTS]);
 
   function makeRecorder(stream) {
     const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus")
@@ -467,6 +637,16 @@ export default function VideoRoom({ roomId }) {
           const receivedTranslation = msg.translation || "";
           console.log("Received translation from other user:", receivedTranslation);
           setRemoteTranslation(receivedTranslation);
+          
+          // If the translation exists and we have a preferred language that's not English,
+          // and TTS is enabled, generate and play TTS
+          if (receivedTranslation && receivedTranslation.trim() !== "" && preferredLanguageRef.current !== "english" && ttsEnabledRef.current) {
+            // Generate TTS for the translated text in the user's preferred language
+            // First, translate the received English text to user's preferred language
+            if (translateAndPlayTTSRef.current) {
+              translateAndPlayTTSRef.current(receivedTranslation);
+            }
+          }
           return;
         }
 
@@ -499,13 +679,28 @@ export default function VideoRoom({ roomId }) {
         localStreamRef.current?.getTracks().forEach((t) => t.stop());
       } catch {}
     };
-  }, [roomId, ensureActiveConnection, startInputVolumeMonitoring]);
+    // translateAndPlayTTS is intentionally not in deps - it uses refs to avoid recreating connection
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [roomId, ensureActiveConnection, startInputVolumeMonitoring, voiceGender]);
 
   const startCall = async () => {
     const ws = wsRef.current;
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       setStatus("WebSocket not ready. Please wait...");
       return;
+    }
+
+    // Unlock audio context on user interaction (for autoplay policy)
+    try {
+      if (!ttsAudioContextRef.current) {
+        ttsAudioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
+      }
+      if (ttsAudioContextRef.current.state === 'suspended') {
+        await ttsAudioContextRef.current.resume();
+        console.log("🔓 Audio context unlocked for TTS");
+      }
+    } catch (e) {
+      console.warn("Failed to unlock audio context:", e);
     }
 
     // Ensure local video is showing
@@ -716,7 +911,23 @@ export default function VideoRoom({ roomId }) {
             <video ref={remoteVideoRef} autoPlay playsInline className="video-room-video" />
             {remoteTranslation && (
               <div className="video-room-translation">
-                <div className="video-room-translation-label">PARTNER'S TRANSLATION</div>
+                <div className="video-room-translation-label">
+                  PARTNER'S TRANSLATION
+                  {isTTSPlaying && (
+                    <span style={{ 
+                      marginLeft: '8px', 
+                      fontSize: '11px', 
+                      padding: '2px 6px', 
+                      background: 'rgba(59, 130, 246, 0.2)', 
+                      borderRadius: '4px',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: '4px'
+                    }}>
+                      🔊 TTS Playing
+                    </span>
+                  )}
+                </div>
                 <div>{remoteTranslation}</div>
               </div>
             )}
@@ -760,6 +971,43 @@ export default function VideoRoom({ roomId }) {
               <option value="german">German</option>
               <option value="japanese">Japanese</option>
             </select>
+
+            <button 
+              onClick={() => setTTSEnabled(!ttsEnabled)}
+              style={{
+                padding: "8px 16px",
+                borderRadius: 6,
+                border: ttsEnabled ? "2px solid var(--accent-primary)" : "1px solid var(--border-color)",
+                background: ttsEnabled ? "var(--accent-light)" : "var(--bg-card)",
+                color: "var(--text-primary)",
+                fontSize: 13,
+                fontWeight: 500,
+                cursor: "pointer",
+                outline: "none",
+                fontFamily: "inherit",
+                display: "flex",
+                alignItems: "center",
+                gap: 6,
+                transition: "all 0.2s ease",
+                whiteSpace: "nowrap",
+              }}
+              title={ttsEnabled ? "Click to disable TTS" : "Click to enable TTS"}
+            >
+              {ttsEnabled ? (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <path d="M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+                  <path d="M19.07 4.93a10 10 0 0 1 0 14.14"></path>
+                </svg>
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+                  <line x1="23" y1="9" x2="17" y2="15"></line>
+                  <line x1="17" y1="9" x2="23" y2="15"></line>
+                </svg>
+              )}
+              <span>TTS {ttsEnabled ? 'On' : 'Off'}</span>
+            </button>
           </div>
 
           <div className="video-room-button-group">

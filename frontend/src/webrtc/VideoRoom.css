@@ -161,31 +161,33 @@
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 12px;
+  padding: 8px 14px;
   border-radius: 6px;
   border: 1px solid var(--border-color);
   background: var(--bg-card);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 500;
   cursor: pointer;
   transition: all 0.15s ease;
   white-space: nowrap;
-  font-family: 'Outfit', sans-serif;
+  font-family: inherit;
   touch-action: manipulation;
 }
 
 .copy-link-button:hover {
   background: var(--bg-secondary);
-  border-color: var(--text-tertiary);
+  border-color: var(--accent-primary);
+  transform: translateY(-1px);
 }
 
 .copy-link-button:active {
-  transform: scale(0.98);
+  transform: scale(0.98) translateY(0);
 }
 
 .copy-link-button svg {
   flex-shrink: 0;
+  stroke: currentColor;
 }
 
 .video-room-dot {
