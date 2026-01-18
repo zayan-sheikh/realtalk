@@ -855,6 +855,15 @@ export default function VideoRoom({ roomId }) {
               <option value="hindi">Hindi</option>
               <option value="korean">Korean</option>
               <option value="arabic">Arabic</option>
+              <option value="french">French</option>
+              <option value="spanish">Spanish</option>
+              <option value="portuguese">Portuguese</option>
+              <option value="russian">Russian</option>
+              <option value="turkish">Turkish</option>
+              <option value="italian">Italian</option>
+              <option value="german">German</option>
+              <option value="japanese">Japanese</option>
+              <option value="korean">Korean</option>
             </select>
           </div>
         </div>
