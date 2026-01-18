@@ -202,6 +202,117 @@ def translate_text():
         traceback.print_exc()
         return jsonify(error=str(e)), 400
 
+@app.post("/create_voice_clone")
+def create_voice_clone():
+    """Create a voice clone using ElevenLabs API"""
+    if not ELEVENLABS_API_KEY:
+        print("❌ ERROR: ELEVENLABS_API_KEY not set!")
+        return jsonify(error="ElevenLabs API key not configured"), 500
+    
+    try:
+        print("\n" + "="*60)
+        print("🎤 CREATING VOICE CLONE")
+        print("="*60)
+        
+        # Get voice name from form data
+        import time
+        voice_name = request.form.get('name', f'Voice_{int(time.time())}')
+        
+        # Get all audio samples
+        audio_files = []
+        for key in request.files:
+            if key.startswith('sample_'):
+                audio_file = request.files[key]
+                audio_files.append(audio_file)
+        
+        if not audio_files:
+            return jsonify(error="No audio samples provided"), 400
+        
+        print(f"📝 Received {len(audio_files)} audio samples")
+        print(f"🏷️ Voice name: {voice_name}")
+        
+        # Convert audio files to the format ElevenLabs expects
+        files_for_upload = []
+        temp_files = []
+        
+        for idx, audio_file in enumerate(audio_files):
+            # Save to temp file
+            temp_path = os.path.join(tempfile.gettempdir(), f'voice_sample_{idx}.webm')
+            audio_file.save(temp_path)
+            temp_files.append(temp_path)
+            
+            # Convert to mp3 using ffmpeg
+            mp3_path = temp_path.replace('.webm', '.mp3')
+            try:
+                subprocess.run([
+                    FFMPEG_PATH,
+                    '-i', temp_path,
+                    '-ar', '44100',
+                    '-ac', '1',
+                    '-b:a', '128k',
+                    '-y',
+                    mp3_path
+                ], check=True, capture_output=True)
+                
+                files_for_upload.append(('files', open(mp3_path, 'rb')))
+                temp_files.append(mp3_path)
+                print(f"✅ Converted sample {idx + 1} to MP3")
+            except subprocess.CalledProcessError as e:
+                print(f"❌ FFmpeg conversion failed: {e.stderr.decode()}")
+                # Clean up temp files
+                for temp_file in temp_files:
+                    try:
+                        os.unlink(temp_file)
+                    except:
+                        pass
+                return jsonify(error="Audio conversion failed"), 500
+        
+        # Call ElevenLabs API to create voice
+        url = "https://api.elevenlabs.io/v1/voices/add"
+        headers = {
+            "xi-api-key": ELEVENLABS_API_KEY
+        }
+        
+        data = {
+            'name': voice_name,
+            'description': 'Custom voice clone for RealTalk'
+        }
+        
+        print(f"🔄 Uploading to ElevenLabs...")
+        response = requests.post(url, headers=headers, data=data, files=files_for_upload)
+        
+        # Close file handles and clean up
+        for _, file_handle in files_for_upload:
+            file_handle.close()
+        
+        for temp_file in temp_files:
+            try:
+                os.unlink(temp_file)
+            except:
+                pass
+        
+        print(f"📡 ElevenLabs response status: {response.status_code}")
+        
+        if response.status_code == 200:
+            voice_data = response.json()
+            voice_id = voice_data.get('voice_id')
+            print(f"✅ Voice clone created successfully! ID: {voice_id}")
+            return jsonify({
+                'voice_id': voice_id,
+                'voice_name': voice_name
+            })
+        else:
+            error_detail = response.text
+            print(f"❌ ElevenLabs API error: {response.status_code}")
+            print(f"❌ Error details: {error_detail}")
+            return jsonify(error=f"ElevenLabs API error: {error_detail}"), response.status_code
+            
+    except Exception as e:
+        print(f"❌ ERROR: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify(error=str(e)), 500
+
 @app.post("/generate_tts")
 def generate_tts():
     """
@@ -230,6 +341,7 @@ def generate_tts():
         
     text = data.get("text", "")
     voice_gender = data.get("voice_gender", "feminine")
+    custom_voice_id = data.get("voice_id", None)  # Custom voice clone ID
     
     print(f"📝 Received text: '{text[:100]}...'")
     print(f"🎤 Voice gender: {voice_gender}")
@@ -237,7 +349,13 @@ def generate_tts():
     if not text:
         return jsonify(error="No text provided"), 400
     
-    voice_id = VOICE_IDS.get(voice_gender, VOICE_IDS["feminine"])
+    # Use custom voice ID if provided, otherwise use default voice
+    if custom_voice_id:
+        voice_id = custom_voice_id
+        print(f"✨ Using custom voice clone: {voice_id}")
+    else:
+        voice_id = VOICE_IDS.get(voice_gender, VOICE_IDS["feminine"])
+        print(f"🎤 Using default voice: {voice_gender} ({voice_id})")
     
     try:
         print(f"🔄 Generating TTS for text: '{text[:50]}...'")

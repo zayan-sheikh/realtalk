@@ -1,5 +1,5 @@
 import { BrowserRouter, Routes, Route, useParams, useNavigate, useSearchParams } from "react-router-dom";
-import { createContext, useState, useEffect, useContext } from "react";
+import { createContext, useState, useEffect, useContext, useRef } from "react";
 import VideoRoom from "./webrtc/VideoRoom";
 import "./App.css";
 
@@ -198,20 +198,483 @@ function LandingPage() {
   );
 }
 
+function VoiceSetupModal({ onComplete, onCancel, defaultVoiceGender, setDefaultVoiceGender }) {
+  const [step, setStep] = useState('choice'); // 'choice', 'recording', 'processing'
+
+  const handleChoice = (custom) => {
+    if (custom) {
+      setStep('recording');
+    } else {
+      setStep('default');
+    }
+  };
+
+  const handleRecordingComplete = async (voiceId) => {
+    onComplete(voiceId);
+  };
+
+  const handleDefaultVoiceSelected = () => {
+    onComplete(null); // Use default voice (voiceGender)
+  };
+
+  return (
+    <div style={{
+      position: 'fixed',
+      top: 0,
+      left: 0,
+      right: 0,
+      bottom: 0,
+      backgroundColor: 'rgba(0, 0, 0, 0.7)',
+      display: 'flex',
+      alignItems: 'center',
+      justifyContent: 'center',
+      zIndex: 1000,
+      padding: '20px'
+    }}>
+      <div style={{
+        background: 'var(--bg-card)',
+        borderRadius: '16px',
+        padding: '32px',
+        maxWidth: '600px',
+        width: '100%',
+        maxHeight: '90vh',
+        overflow: 'auto',
+        boxShadow: '0 20px 60px rgba(0, 0, 0, 0.3)'
+      }}>
+        {step === 'choice' && (
+          <div>
+            <h2 style={{ color: 'var(--text-primary)', marginBottom: '16px' }}>Voice Setup</h2>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>
+              Choose how your partner will hear your translated speech
+            </p>
+            
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <button
+                onClick={() => handleChoice(false)}
+                style={{
+                  padding: '20px',
+                  border: '2px solid var(--accent-primary)',
+                  borderRadius: '12px',
+                  background: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  fontWeight: 500,
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.target.style.background = 'var(--accent-light)'}
+                onMouseLeave={(e) => e.target.style.background = 'var(--bg-primary)'}
+              >
+                <div style={{ fontSize: '24px', marginBottom: '8px' }}>🎤</div>
+                <div>Default Voice</div>
+                <div style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '8px' }}>
+                  Use a pre-made voice (masculine or feminine)
+                </div>
+              </button>
+
+              <button
+                onClick={() => handleChoice(true)}
+                style={{
+                  padding: '20px',
+                  border: '2px solid var(--accent-primary)',
+                  borderRadius: '12px',
+                  background: 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  fontWeight: 500,
+                  transition: 'all 0.2s'
+                }}
+                onMouseEnter={(e) => e.target.style.background = 'var(--accent-light)'}
+                onMouseLeave={(e) => e.target.style.background = 'var(--bg-primary)'}
+              >
+                <div style={{ fontSize: '24px', marginBottom: '8px' }}>✨</div>
+                <div>Custom Voice Clone</div>
+                <div style={{ fontSize: '14px', color: 'var(--text-secondary)', marginTop: '8px' }}>
+                  Record your voice for a personalized experience
+                </div>
+              </button>
+            </div>
+
+            <button
+              onClick={onCancel}
+              style={{
+                marginTop: '24px',
+                padding: '12px',
+                width: '100%',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+            >
+              Cancel
+            </button>
+          </div>
+        )}
+
+        {step === 'default' && (
+          <div>
+            <h2 style={{ color: 'var(--text-primary)', marginBottom: '16px' }}>Select Default Voice</h2>
+            <p style={{ color: 'var(--text-secondary)', marginBottom: '24px' }}>
+              Choose the voice type for your partner's translated speech
+            </p>
+            
+            <div style={{ display: 'flex', gap: '12px', marginBottom: '24px' }}>
+              <button
+                onClick={() => setDefaultVoiceGender("feminine")}
+                style={{
+                  flex: 1,
+                  padding: '16px',
+                  border: `2px solid ${defaultVoiceGender === "feminine" ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+                  borderRadius: '12px',
+                  background: defaultVoiceGender === "feminine" ? 'var(--accent-light)' : 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  fontWeight: 500
+                }}
+              >
+                Feminine Voice
+              </button>
+              <button
+                onClick={() => setDefaultVoiceGender("masculine")}
+                style={{
+                  flex: 1,
+                  padding: '16px',
+                  border: `2px solid ${defaultVoiceGender === "masculine" ? 'var(--accent-primary)' : 'var(--border-color)'}`,
+                  borderRadius: '12px',
+                  background: defaultVoiceGender === "masculine" ? 'var(--accent-light)' : 'var(--bg-primary)',
+                  color: 'var(--text-primary)',
+                  cursor: 'pointer',
+                  fontSize: '16px',
+                  fontWeight: 500
+                }}
+              >
+                Masculine Voice
+              </button>
+            </div>
+
+            <button
+              onClick={handleDefaultVoiceSelected}
+              style={{
+                padding: '16px',
+                width: '100%',
+                border: 'none',
+                borderRadius: '8px',
+                background: 'var(--accent-primary)',
+                color: 'white',
+                cursor: 'pointer',
+                fontSize: '16px',
+                fontWeight: 600
+              }}
+            >
+              Continue
+            </button>
+
+            <button
+              onClick={() => setStep('choice')}
+              style={{
+                marginTop: '12px',
+                padding: '12px',
+                width: '100%',
+                border: '1px solid var(--border-color)',
+                borderRadius: '8px',
+                background: 'transparent',
+                color: 'var(--text-secondary)',
+                cursor: 'pointer',
+                fontSize: '14px'
+              }}
+            >
+              Back
+            </button>
+          </div>
+        )}
+
+        {step === 'recording' && (
+          <VoiceRecorder 
+            onComplete={handleRecordingComplete}
+            onBack={() => setStep('choice')}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+function VoiceRecorder({ onComplete, onBack }) {
+  const [currentSentence, setCurrentSentence] = useState(0);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordings, setRecordings] = useState([]);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [error, setError] = useState("");
+  const mediaRecorderRef = useRef(null);
+  const audioChunksRef = useRef([]);
+
+  const sentences = [
+    "Hello, my name is speaking to you in my natural voice.",
+    "I'm excited to use this technology for real-time translation.",
+    "This voice clone will help my conversation partner understand me better."
+  ];
+
+  const startRecording = async () => {
+    try {
+      setError("");
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      const mediaRecorder = new MediaRecorder(stream);
+      mediaRecorderRef.current = mediaRecorder;
+      audioChunksRef.current = [];
+
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+        setRecordings(prev => [...prev, audioBlob]);
+        
+        if (currentSentence < sentences.length - 1) {
+          setCurrentSentence(prev => prev + 1);
+        }
+        
+        stream.getTracks().forEach(track => track.stop());
+      };
+
+      mediaRecorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      setError("Failed to access microphone. Please grant permission.");
+      console.error(err);
+    }
+  };
+
+  const stopRecording = () => {
+    if (mediaRecorderRef.current && isRecording) {
+      mediaRecorderRef.current.stop();
+      setIsRecording(false);
+    }
+  };
+
+  const createVoiceClone = async () => {
+    setIsProcessing(true);
+    setError("");
+
+    try {
+      const formData = new FormData();
+      formData.append('name', `Voice_${Date.now()}`);
+      
+      recordings.forEach((blob, index) => {
+        formData.append(`sample_${index}`, blob, `sample_${index}.webm`);
+      });
+
+      const response = await fetch('http://localhost:4000/create_voice_clone', {
+        method: 'POST',
+        body: formData
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error || 'Failed to create voice clone');
+      }
+
+      const data = await response.json();
+      onComplete(data.voice_id);
+    } catch (err) {
+      setError(err.message || 'Failed to create voice clone');
+      setIsProcessing(false);
+    }
+  };
+
+  const allRecorded = recordings.length === sentences.length;
+
+  return (
+    <div>
+      <h2 style={{ color: 'var(--text-primary)', marginBottom: '16px' }}>Record Your Voice</h2>
+      <p style={{ color: 'var(--text-secondary)', marginBottom: '24px', fontSize: '14px' }}>
+        Record yourself reading these {sentences.length} sentences. Speak clearly and naturally.
+      </p>
+
+      <div style={{ marginBottom: '24px' }}>
+        <div style={{
+          background: 'var(--bg-primary)',
+          padding: '20px',
+          borderRadius: '12px',
+          marginBottom: '16px',
+          border: '2px solid var(--accent-primary)'
+        }}>
+          <div style={{ 
+            fontSize: '12px', 
+            color: 'var(--text-secondary)', 
+            marginBottom: '8px',
+            fontWeight: 600
+          }}>
+            SENTENCE {currentSentence + 1} OF {sentences.length}
+          </div>
+          <div style={{ 
+            fontSize: '18px', 
+            color: 'var(--text-primary)', 
+            lineHeight: '1.6'
+          }}>
+            "{sentences[currentSentence]}"
+          </div>
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '16px' }}>
+          {sentences.map((_, index) => (
+            <div
+              key={index}
+              style={{
+                flex: 1,
+                height: '8px',
+                borderRadius: '4px',
+                background: recordings[index] ? 'var(--accent-primary)' : 'var(--border-color)',
+                transition: 'all 0.3s'
+              }}
+            />
+          ))}
+        </div>
+
+        {!isRecording ? (
+          <button
+            onClick={startRecording}
+            disabled={allRecorded}
+            style={{
+              padding: '16px',
+              width: '100%',
+              border: 'none',
+              borderRadius: '8px',
+              background: allRecorded ? 'var(--border-color)' : 'var(--accent-primary)',
+              color: 'white',
+              cursor: allRecorded ? 'not-allowed' : 'pointer',
+              fontSize: '16px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px'
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <circle cx="12" cy="12" r="10"/>
+            </svg>
+            {recordings[currentSentence] ? 'Re-record' : 'Start Recording'}
+          </button>
+        ) : (
+          <button
+            onClick={stopRecording}
+            style={{
+              padding: '16px',
+              width: '100%',
+              border: 'none',
+              borderRadius: '8px',
+              background: '#ef4444',
+              color: 'white',
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: 600,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              gap: '8px',
+              animation: 'pulse 2s infinite'
+            }}
+          >
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
+              <rect x="6" y="6" width="12" height="12"/>
+            </svg>
+            Stop Recording
+          </button>
+        )}
+      </div>
+
+      {error && (
+        <div style={{
+          padding: '12px',
+          background: '#fee2e2',
+          color: '#991b1b',
+          borderRadius: '8px',
+          marginBottom: '16px',
+          fontSize: '14px'
+        }}>
+          {error}
+        </div>
+      )}
+
+      {allRecorded && (
+        <button
+          onClick={createVoiceClone}
+          disabled={isProcessing}
+          style={{
+            padding: '16px',
+            width: '100%',
+            border: 'none',
+            borderRadius: '8px',
+            background: isProcessing ? 'var(--border-color)' : '#10b981',
+            color: 'white',
+            cursor: isProcessing ? 'not-allowed' : 'pointer',
+            fontSize: '16px',
+            fontWeight: 600,
+            marginBottom: '12px'
+          }}
+        >
+          {isProcessing ? 'Creating Voice Clone...' : 'Create Voice Clone'}
+        </button>
+      )}
+
+      <button
+        onClick={onBack}
+        disabled={isProcessing}
+        style={{
+          padding: '12px',
+          width: '100%',
+          border: '1px solid var(--border-color)',
+          borderRadius: '8px',
+          background: 'transparent',
+          color: 'var(--text-secondary)',
+          cursor: isProcessing ? 'not-allowed' : 'pointer',
+          fontSize: '14px'
+        }}
+      >
+        Back
+      </button>
+    </div>
+  );
+}
+
 function JoinPage() {
   const navigate = useNavigate();
   const [roomId, setRoomId] = useState("");
   const [voiceGender, setVoiceGender] = useState("feminine");
+  const [showVoiceSetup, setShowVoiceSetup] = useState(false);
+  const [pendingAction, setPendingAction] = useState(null); // 'create' or 'join'
   const { theme, toggleTheme } = useContext(ThemeContext);
 
-  const createNewRoom = () => {
-    const id = Math.random().toString(36).substring(2, 9);
-    navigate(`/call/${id}?voice=${voiceGender}`);
+  const handleCreateOrJoin = (action) => {
+    setPendingAction(action);
+    setShowVoiceSetup(true);
   };
+
+  const handleVoiceSetupComplete = (voiceId = null) => {
+    setShowVoiceSetup(false);
+    const voiceParam = voiceId || voiceGender;
+    
+    if (pendingAction === 'create') {
+      const id = Math.random().toString(36).substring(2, 9);
+      navigate(`/call/${id}?voice=${voiceParam}`);
+    } else if (pendingAction === 'join' && roomId.trim()) {
+      navigate(`/call/${roomId.trim()}?voice=${voiceParam}`);
+    }
+  };
+
+  const createNewRoom = () => handleCreateOrJoin('create');
 
   const joinRoom = () => {
     if (roomId.trim()) {
-      navigate(`/call/${roomId.trim()}?voice=${voiceGender}`);
+      handleCreateOrJoin('join');
     }
   };
 
@@ -223,6 +686,15 @@ function JoinPage() {
 
   return (
     <div className="home-page">
+      {showVoiceSetup && (
+        <VoiceSetupModal 
+          onComplete={handleVoiceSetupComplete}
+          onCancel={() => setShowVoiceSetup(false)}
+          defaultVoiceGender={voiceGender}
+          setDefaultVoiceGender={setVoiceGender}
+        />
+      )}
+      
       <div className="home-container">
         <div className="home-header">
           <div className="home-logo">
@@ -234,34 +706,6 @@ function JoinPage() {
 
         <div className="home-card">
           <h2>Join or Create a Room</h2>
-          
-          <div className="home-input-group" style={{ marginBottom: '16px' }}>
-            <label style={{ 
-              fontSize: '14px', 
-              fontWeight: 500, 
-              color: 'var(--text-primary)', 
-              marginBottom: '8px', 
-              display: 'block' 
-            }}>
-              Partner's voice type (for TTS)
-            </label>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              <button
-                onClick={() => setVoiceGender("feminine")}
-                className={`home-button ${voiceGender === "feminine" ? "primary" : "secondary"}`}
-                style={{ flex: 1 }}
-              >
-                Feminine Voice
-              </button>
-              <button
-                onClick={() => setVoiceGender("masculine")}
-                className={`home-button ${voiceGender === "masculine" ? "primary" : "secondary"}`}
-                style={{ flex: 1 }}
-              >
-                Masculine Voice
-              </button>
-            </div>
-          </div>
 
           <div className="home-input-group">
             <input

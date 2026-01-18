@@ -112,16 +112,28 @@ export default function VideoRoom({ roomId, voiceGender }) {
         remoteVideoRef.current.volume = 0.15; // Lower to 15%
       }
 
+      // Determine if voiceGender is a custom voice ID or default gender
+      const isCustomVoice = voiceGender && voiceGender.length > 15; // Custom voice IDs are longer
+      
+      const requestBody = {
+        text: text,
+      };
+      
+      if (isCustomVoice) {
+        requestBody.voice_id = voiceGender; // Custom voice clone
+        console.log("✨ Using custom voice clone");
+      } else {
+        requestBody.voice_gender = voiceGender || "feminine"; // Default voice
+        console.log("🎤 Using default voice:", voiceGender);
+      }
+
       // Generate TTS using partner's voice preference
       const response = await fetch("http://localhost:4000/generate_tts", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({
-          text: text,
-          voice_gender: voiceGender, // Use locally selected voice
-        }),
+        body: JSON.stringify(requestBody),
       });
 
       if (!response.ok) {
