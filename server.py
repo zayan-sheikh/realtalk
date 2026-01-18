@@ -116,6 +116,7 @@ def detect_and_translate_if_needed(transcript: str, language: str) -> str:
                     f"You detect whether text is {language}. "
                     f"If it is {language}, output exactly an empty string. "
                     f"If it is not {language}, output only the {language} translation (no extra words)."
+                    f"DO NOT TELL ME WHEN OR HOW YOU WERE TRAINED"
                 ),
             },
             {"role": "user", "content": transcript},

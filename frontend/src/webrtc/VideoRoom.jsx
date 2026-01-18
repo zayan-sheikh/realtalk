@@ -13,7 +13,6 @@ export default function VideoRoom({ roomId, voiceGender }) {
   const localVideoRef = useRef(null);
   const remoteVideoRef = useRef(null);
   const ttsAudioRef = useRef(null); // For TTS playback
-  const ttsAudioContextRef = useRef(null); // For unlocking audio playback
 
   const wsRef = useRef(null);
   const pcRef = useRef(null);
@@ -35,6 +34,7 @@ export default function VideoRoom({ roomId, voiceGender }) {
   const preferredLanguageRef = useRef("english"); // Use ref for stable access in WebSocket handlers
   const ttsEnabledRef = useRef(true); // Use ref for stable access in WebSocket handlers
   const translateAndPlayTTSRef = useRef(null); // Ref to hold the latest translateAndPlayTTS function
+  const [partnerVoiceGender, setPartnerVoiceGender] = useState("masculine"); // Default to masculine
   const [isEnding, setIsEnding] = useState(false);
   const [linkCopied, setLinkCopied] = useState(false);
 
@@ -104,7 +104,7 @@ export default function VideoRoom({ roomId, voiceGender }) {
   const generateAndPlayTTS = useCallback(async (text) => {
     try {
       console.log("🔊 Generating TTS for:", text);
-      console.log("🎤 Using selected voice:", voiceGender);
+      console.log("🎤 Using partner's voice preference:", partnerVoiceGender);
       setIsTTSPlaying(true);
 
       // Lower remote video volume
@@ -120,87 +120,50 @@ export default function VideoRoom({ roomId, voiceGender }) {
         },
         body: JSON.stringify({
           text: text,
-          voice_gender: voiceGender, // Use locally selected voice
+          voice_gender: partnerVoiceGender, // Use partner's voice preference
         }),
       });
+      console.log(response);
 
       if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ error: response.statusText }));
-        throw new Error(`TTS generation failed: ${errorData.error || response.statusText}`);
+        throw new Error(`TTS generation failed: ${response.statusText}`);
       }
 
       const audioBlob = await response.blob();
-      console.log("📦 Audio blob received:", audioBlob.size, "bytes, type:", audioBlob.type);
-      
       const audioUrl = URL.createObjectURL(audioBlob);
 
-      // Stop and clean up any existing audio
-      if (ttsAudioRef.current) {
-        try {
-          ttsAudioRef.current.pause();
-          ttsAudioRef.current.currentTime = 0;
-          ttsAudioRef.current.src = "";
-        } catch (e) {
-          console.warn("Error cleaning up old audio:", e);
-        }
+      // Create or reuse audio element
+      if (!ttsAudioRef.current) {
+        ttsAudioRef.current = new Audio();
       }
 
-      // Create fresh audio element
-      const audio = new Audio();
-      ttsAudioRef.current = audio;
-      
+      const audio = ttsAudioRef.current;
       audio.src = audioUrl;
       audio.volume = 1.0;
 
-      console.log("🎵 Audio element created and src set");
-
-      // Setup event handlers before playing
-      const cleanup = () => {
+      // Play TTS
+      audio.onended = () => {
+        // Restore remote video volume
         if (remoteVideoRef.current) {
           remoteVideoRef.current.volume = 1.0;
         }
         setIsTTSPlaying(false);
-        setTimeout(() => URL.revokeObjectURL(audioUrl), 100); // Delay revoke slightly
-      };
-
-      audio.onended = () => {
+        URL.revokeObjectURL(audioUrl);
         console.log("✅ TTS playback completed");
-        cleanup();
       };
 
       audio.onerror = (e) => {
         console.error("TTS playback error:", e);
-        console.error("Audio element error code:", audio.error?.code, audio.error?.message);
-        cleanup();
-      };
-
-      audio.onloadeddata = () => {
-        console.log("📻 Audio loaded, duration:", audio.duration, "seconds");
-      };
-
-      // Play immediately - the audio context was unlocked when user clicked "Start Call"
-      try {
-        console.log("▶️ Attempting to play audio...");
-        
-        // Play returns a promise
-        const playPromise = audio.play();
-        
-        if (playPromise !== undefined) {
-          playPromise.then(() => {
-            console.log("🔊 Audio playing successfully");
-          }).catch((playError) => {
-            console.error("Play failed:", playError);
-            if (playError.name === 'NotAllowedError') {
-              console.error("⚠️ Autoplay blocked by browser.");
-              // Don't show alert - just silently fail since user already clicked Start Call
-            }
-            cleanup();
-          });
+        // Restore remote video volume on error
+        if (remoteVideoRef.current) {
+          remoteVideoRef.current.volume = 1.0;
         }
-      } catch (playError) {
-        console.error("Play error:", playError);
-        cleanup();
-      }
+        setIsTTSPlaying(false);
+        URL.revokeObjectURL(audioUrl);
+      };
+
+      await audio.play();
+      console.log("🔊 Playing TTS audio");
 
     } catch (error) {
       console.error("Failed to generate/play TTS:", error);
@@ -210,7 +173,7 @@ export default function VideoRoom({ roomId, voiceGender }) {
       }
       setIsTTSPlaying(false);
     }
-  }, [voiceGender]);
+  }, [partnerVoiceGender]);
 
   // Translate text to user's preferred language and play TTS
   const translateAndPlayTTS = useCallback(async (englishText) => {
@@ -298,7 +261,9 @@ export default function VideoRoom({ roomId, voiceGender }) {
             console.error("Failed to send translation:", sendError);
           }
         } else {
-          if (wsRef.current?.readyState !== WebSocket.OPEN) {
+          if (!translation || translation.trim() === "") {
+            console.log("No translation to send (empty)");
+          } else if (wsRef.current?.readyState !== WebSocket.OPEN) {
             console.log("WebSocket not open, readyState:", wsRef.current?.readyState);
           } else if (!roomId) {
             console.log("RoomId not available");
@@ -380,7 +345,7 @@ export default function VideoRoom({ roomId, voiceGender }) {
         }
         
         // Stop recording if volume drops below threshold and we're currently recording
-        console.log("volume", volume);
+        console.log("lastVolume", lastVolume, "volume", volume);
         if (lastVolume > 0.035 && volume < 0.015) {
           console.log("Volume dropped below threshold, stopping recording");
           if (mrRef.current && mrRef.current.state === "recording") {
@@ -532,6 +497,18 @@ export default function VideoRoom({ roomId, voiceGender }) {
       ws.onopen = () => {
         ws.send(JSON.stringify({ type: "join", roomId }));
         setStatus("Joined room. Waiting for peer...");
+        
+        // Send voice preference to partner
+        setTimeout(() => {
+          if (ws.readyState === WebSocket.OPEN) {
+            ws.send(JSON.stringify({
+              type: "voicePreference",
+              roomId,
+              voiceGender: voiceGender,
+            }));
+            console.log("Sent voice preference to partner:", voiceGender);
+          }
+        }, 500);
       };
 
       ws.onmessage = async (event) => {
@@ -657,6 +634,13 @@ export default function VideoRoom({ roomId, voiceGender }) {
           remotePreferredLanguageRef.current = remoteUserPreferredLanguage; // Update ref for closures
           return;
         }
+
+        if (msg.type === "voicePreference") {
+          const remoteVoiceGender = msg.voiceGender || "masculine";
+          console.log("Received voice preference from partner:", remoteVoiceGender);
+          setPartnerVoiceGender(remoteVoiceGender);
+          return;
+        }
       };
 
       ws.onerror = () => setStatus("WebSocket error (check server / URL)");
@@ -688,19 +672,6 @@ export default function VideoRoom({ roomId, voiceGender }) {
     if (!ws || ws.readyState !== WebSocket.OPEN) {
       setStatus("WebSocket not ready. Please wait...");
       return;
-    }
-
-    // Unlock audio context on user interaction (for autoplay policy)
-    try {
-      if (!ttsAudioContextRef.current) {
-        ttsAudioContextRef.current = new (window.AudioContext || window.webkitAudioContext)();
-      }
-      if (ttsAudioContextRef.current.state === 'suspended') {
-        await ttsAudioContextRef.current.resume();
-        console.log("🔓 Audio context unlocked for TTS");
-      }
-    } catch (e) {
-      console.warn("Failed to unlock audio context:", e);
     }
 
     // Ensure local video is showing
@@ -893,7 +864,7 @@ export default function VideoRoom({ roomId, voiceGender }) {
             {lines.length > 0 && lines[lines.length - 1].en && (
               <div className="video-room-translation">
                 <div className="video-room-translation-label">YOUR TRANSLATION</div>
-                <div>{lines[lines.length - 1].en}</div>
+                <div>{lines[lines.length - 1].transcript}</div>
               </div>
             )}
           </div>
