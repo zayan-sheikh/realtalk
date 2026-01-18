@@ -46,7 +46,7 @@ function LandingPage() {
 
       <section className="landing-hero">
         <div className="landing-hero-content">
-          <div className="landing-hero-badge">Real-Time Translation</div>
+          <div className="landing-hero-badge">Live Translation</div>
           <h1 className="landing-hero-title">
             Break Language Barriers<br />in <span className="landing-hero-highlight">Real Time</span>
           </h1>
@@ -87,10 +87,10 @@ function LandingPage() {
                 <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"></path>
               </svg>
             </div>
-            <h3>Instant Translation</h3>
+            <h3>Live, On-Call Translation</h3>
             <p>Real-time speech-to-text translation during live video calls with minimal latency.</p>
           </div>
-          <div className="landing-feature-card">
+          {/* <div className="landing-feature-card">
             <div className="landing-feature-icon">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <rect x="2" y="7" width="20" height="15" rx="2" ry="2"></rect>
@@ -99,7 +99,7 @@ function LandingPage() {
             </div>
             <h3>HD Video Quality</h3>
             <p>Crystal-clear video and audio for professional conversations across the globe.</p>
-          </div>
+          </div> */}
           <div className="landing-feature-card">
             <div className="landing-feature-icon">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -109,7 +109,7 @@ function LandingPage() {
             <h3>Secure & Private</h3>
             <p>End-to-end encryption ensures your conversations remain confidential.</p>
           </div>
-          <div className="landing-feature-card">
+          {/* <div className="landing-feature-card">
             <div className="landing-feature-icon">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <circle cx="12" cy="12" r="10"></circle>
@@ -118,7 +118,7 @@ function LandingPage() {
             </div>
             <h3>Zero Setup</h3>
             <p>No downloads or installations required. Start calling instantly from your browser.</p>
-          </div>
+          </div> */}
           <div className="landing-feature-card">
             <div className="landing-feature-icon">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -129,7 +129,7 @@ function LandingPage() {
             <h3>Live Captions</h3>
             <p>On-screen captions display translations in real-time for easy reading.</p>
           </div>
-          <div className="landing-feature-card">
+          {/* <div className="landing-feature-card">
             <div className="landing-feature-icon">
               <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                 <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
@@ -139,7 +139,7 @@ function LandingPage() {
             </div>
             <h3>Cross-Platform</h3>
             <p>Works seamlessly on desktop, tablet, and mobile devices.</p>
-          </div>
+          </div> */}
         </div>
       </section>
 
