@@ -183,7 +183,7 @@ export default function VideoRoom({ roomId }) {
           }
         }
         
-        animationFrameRef.current = setTimeout(monitor, 4000, volume);
+        animationFrameRef.current = setTimeout(monitor, 2500, volume);
       }
       monitor();
     } catch (e) {
