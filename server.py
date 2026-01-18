@@ -128,9 +128,8 @@ def translate_if_non_english():
     if "audio" not in request.files:
         return jsonify(error="Missing form-data file field 'audio'."), 400
     
-    if "language" not in request.json:
-        return jsonify(error="Missing JSON field 'language'."), 400
-    language = request.json["language"]
+    # Get language from form data (not JSON, since we're using multipart/form-data)
+    language = request.form.get("language", "English")
 
     try:
         print("🔄 Converting audio...")
